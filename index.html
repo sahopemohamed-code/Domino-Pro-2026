@@ -6,65 +6,76 @@
     <title>Step By Domino Pro 2026</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800;900&display=swap" rel="stylesheet">
-    <!-- PeerJS للعب الأونلاين -->
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<!-- زر القائمة — يظهر دائماً -->
-<div id="menu-trigger" onclick="toggleMenu()">
-    <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+<!-- ===== زر القائمة ===== -->
+<div id="menu-trigger" class="hidden" onclick="toggleMenu()">
+    <div class="bar"></div>
+    <div class="bar"></div>
+    <div class="bar"></div>
 </div>
 
-<!-- القائمة الجانبية -->
+<!-- ===== القائمة الجانبية ===== -->
 <aside id="side-drawer">
     <div class="drawer-header">
         <div class="stepby-logo-css">
-            <div class="logo-bar b1"></div><div class="logo-bar b2"></div><div class="logo-bar b3"></div>
+            <div class="logo-bar b1"></div>
+            <div class="logo-bar b2"></div>
+            <div class="logo-bar b3"></div>
         </div>
         <h1 class="company-name-title">Step By</h1>
-        <p style="color:#666;font-size:11px;margin-top:4px;letter-spacing:2px;">DOMINO PRO 2026</p>
+        <p style="color:#666; font-size:11px; margin-top:4px; letter-spacing:2px;">DOMINO PRO 2026</p>
     </div>
+
     <div class="menu-content">
-        <!-- بطاقة اللاعب -->
+
         <div class="user-info-card">
             <div class="player-name-frame" id="player-name-frame">
-                <span id="player-display-name">👤 اللاعب</span>
+                <span id="player-display-name">اللاعب</span>
             </div>
-            <p id="room-display-id" style="margin:5px 0 0;font-size:12px;opacity:0.6;"></p>
+            <p id="room-display-id" style="margin:5px 0 0; font-size:12px; opacity:0.6;"></p>
             <div class="gem-display">
                 <span class="gem-icon">💎</span>
                 <span id="gem-count-menu">0</span>
-                <span style="font-size:11px;color:#888;margin-right:4px;">جوهرة</span>
+                <span style="font-size:11px; color:#888; margin-right:4px;">جوهرة</span>
             </div>
         </div>
-        <!-- إحصائيات -->
+
         <div class="stats-card">
-            <div class="stat-row"><span>🏆 الجولة</span><span id="menu-round" style="color:var(--gold)">1</span></div>
-            <div class="stat-row"><span>⭐ نقاطك</span><span id="menu-score-a" style="color:#4fc3f7">0</span></div>
-            <div class="stat-row"><span>🤖 الخصم</span><span id="menu-score-b" style="color:#ff5252">0</span></div>
+            <div class="stat-row">
+                <span>🏆 الجولة</span>
+                <span id="menu-round" style="color:var(--gold)">1</span>
+            </div>
+            <div class="stat-row">
+                <span>⭐ نقاطك</span>
+                <span id="menu-score-a" style="color:#4fc3f7">0</span>
+            </div>
+            <div class="stat-row">
+                <span>👤 الخصم</span>
+                <span id="menu-score-b" style="color:#ff5252">0</span>
+            </div>
         </div>
-        <!-- أزرار — تعمل في اللوبي وداخل اللعبة -->
-        <button class="menu-action-btn shop-btn"  id="menu-btn-shop"       onclick="menuAction('shop')">🛒 المتجر</button>
-        <button class="menu-action-btn"           id="menu-btn-themes"     onclick="menuAction('themes')">🎨 ثيمات الطاولة</button>
-        <button class="menu-action-btn"           id="menu-btn-loot"       onclick="menuAction('loot')">📦 صناديق الجوائز</button>
-        <button class="menu-action-btn"           id="menu-btn-stats"      onclick="menuAction('stats')">📊 إحصائياتي</button>
-        <button class="menu-action-btn"           id="menu-btn-missions"   onclick="menuAction('missions')">🎯 المهام اليومية</button>
-        <button class="menu-action-btn"           id="menu-btn-leaderboard"onclick="menuAction('leaderboard')">🏅 لوحة المتصدرين</button>
-        <!-- يظهر فقط داخل اللعبة -->
-        <button class="menu-action-btn" id="menu-btn-restart" onclick="menuAction('restart')" style="display:none">🔄 إعادة الجولة</button>
-        <button class="exit-btn" id="menu-btn-exit" onclick="menuAction('exit')" style="display:none">🚶 خروج</button>
+
+        <button class="menu-action-btn shop-btn" onclick="openShop()">🛒 المتجر</button>
+        <button class="menu-action-btn" onclick="openAchievements()">🏆 الإنجازات</button>
+        <button class="menu-action-btn" onclick="restartRound()">🔄 إعادة الجولة</button>
+        <button class="exit-btn" onclick="exitSession()">🚶 خروج نهائي</button>
+
     </div>
+
     <div class="drawer-footer">
-        <div class="rights-message">جميع الحقوق محفوظة لشركة Step By &copy; 2026<br>تم التطوير بواسطة صهيب محمد</div>
+        <div class="rights-message">
+            جميع الحقوق محفوظة لشركة Step By &copy; 2026<br>
+            تم التطوير بواسطة صهيب محمد
+        </div>
     </div>
 </aside>
 
 <!-- ===== شاشة المتجر ===== -->
 <div id="shop-screen" class="hidden shop-overlay">
     <div class="shop-container">
-        <!-- رأس المتجر -->
         <div class="shop-header">
             <button class="shop-close-btn" onclick="closeShop()">✕</button>
             <h2 class="shop-title">🛒 متجر Step By</h2>
@@ -73,131 +84,167 @@
                 <span id="gem-count-shop">0</span>
             </div>
         </div>
-
-        <!-- تبويبات المتجر -->
         <div class="shop-tabs">
-            <button class="shop-tab active" onclick="switchTab('gems')"   id="tab-gems">💎 الجواهر</button>
-            <button class="shop-tab"        onclick="switchTab('skins')"  id="tab-skins">🎨 سكنات</button>
-            <button class="shop-tab"        onclick="switchTab('frames')" id="tab-frames">✨ إطارات</button>
-            <button class="shop-tab"        onclick="switchTab('powers')" id="tab-powers">⚡ قدرات</button>
-            <button class="shop-tab"        onclick="switchTab('vip')"    id="tab-vip">👑 VIP</button>
+            <button class="shop-tab active" id="tab-gems"   onclick="switchTab('gems')">💎 الجواهر</button>
+            <button class="shop-tab"        id="tab-skins"  onclick="switchTab('skins')">🎨 سكنات</button>
+            <button class="shop-tab"        id="tab-frames" onclick="switchTab('frames')">✨ إطارات</button>
+            <button class="shop-tab"        id="tab-powers" onclick="switchTab('powers')">⚡ قدرات</button>
+            <button class="shop-tab"        id="tab-vip"    onclick="switchTab('vip')">👑 VIP</button>
         </div>
-
-        <!-- محتوى المتجر -->
         <div class="shop-content" id="shop-content"></div>
     </div>
 </div>
 
-<!-- لوبي -->
+<!-- ===== شاشة اللوبي ===== -->
 <div id="lobby-screen" class="screen">
     <div class="lobby-bg-effect"></div>
     <div class="lobby-inner">
+
         <div class="lobby-logo-wrap">
             <div class="stepby-logo-css large-logo">
-                <div class="logo-bar b1"></div><div class="logo-bar b2"></div><div class="logo-bar b3"></div>
+                <div class="logo-bar b1"></div>
+                <div class="logo-bar b2"></div>
+                <div class="logo-bar b3"></div>
             </div>
-            <h1 class="lobby-game-title">STEP BY<br><span>DOMINO PRO</span></h1>
+            <h1 class="lobby-game-title">
+                STEP BY
+                <span>DOMINO PRO</span>
+            </h1>
             <p class="lobby-year">2026 EDITION</p>
-            <!-- جواهر في اللوبي -->
             <div class="lobby-gems">
-                <span>💎</span><span id="gem-count-lobby">0</span>
+                <span>💎</span>
+                <span id="gem-count-lobby">0</span>
                 <button class="gem-buy-small" onclick="openShop(); switchTab('gems')">+ شراء</button>
             </div>
         </div>
+
         <div class="lobby-card">
-            <input type="text" id="username" class="custom-input" placeholder="✏️ اسمك الكريم..." maxlength="20">
+            <input type="text" id="username" class="custom-input"
+                   placeholder="✏️ اسمك الكريم..." maxlength="20">
+
             <div class="mode-selector">
                 <button class="mode-btn active" id="btn-solo"  onclick="selectMode('solo')">🤖 ضد الكمبيوتر</button>
                 <button class="mode-btn"        id="btn-multi" onclick="selectMode('multi')">👥 متعدد اللاعبين</button>
             </div>
+
             <div id="room-options" class="hidden">
-                <input type="text" id="room-code" class="custom-input" placeholder="🔑 رمز الغرفة...">
-                <select id="player-count-select" class="custom-input">
-                    <option value="4">4 لاعبين (شراكة)</option>
-                    <option value="2">2 لاعبين (فردي)</option>
-                </select>
+                <input type="text" id="room-code" class="custom-input"
+                       placeholder="🔑 رمز الغرفة...">
             </div>
+
             <div id="difficulty-options">
-                <p style="color:#888;font-size:12px;margin-bottom:8px;text-align:center;">مستوى الصعوبة</p>
+                <p style="color:#888; font-size:12px; margin-bottom:8px; text-align:center;">مستوى الصعوبة</p>
                 <div class="diff-selector">
                     <button class="diff-btn"        id="diff-easy"   onclick="selectDiff('easy')">😊 سهل</button>
                     <button class="diff-btn active" id="diff-medium" onclick="selectDiff('medium')">⚡ متوسط</button>
                     <button class="diff-btn"        id="diff-hard"   onclick="selectDiff('hard')">💀 صعب</button>
                 </div>
             </div>
+
             <button class="main-btn" onclick="prepareLobby()">🎲 ابدأ اللعبة</button>
             <button class="shop-lobby-btn" onclick="openShop()">🛒 المتجر</button>
         </div>
+
     </div>
 </div>
 
-<!-- انتظار -->
+<!-- ===== شاشة الانتظار ===== -->
 <div id="wait-screen" class="screen hidden">
     <div class="lobby-card">
         <div class="waiting-spinner"></div>
-        <h2 id="wait-status" style="color:var(--gold);margin:16px 0;">بانتظار اللاعبين...</h2>
-        <div id="players-list" style="margin:16px 0;text-align:right;"></div>
+        <h2 id="wait-status" style="color:var(--gold); margin:16px 0;">بانتظار اللاعبين...</h2>
+        <div id="players-list" style="margin:16px 0; text-align:right;"></div>
         <button id="start-btn" class="main-btn hidden" onclick="startEngine()">🎮 بدء المباراة الآن</button>
     </div>
 </div>
 
-<!-- طاولة اللعب -->
+<!-- ===== طاولة اللعب ===== -->
 <main id="table-stage" class="hidden">
+
+    <!-- لوحة النقاط -->
     <div id="scoreboard">
         <div class="score-row">
             <span class="score-label" style="color:#4fc3f7">أنت</span>
-            <span class="score-val" style="color:#4fc3f7" id="s-a">0</span>
+            <span class="score-val"   style="color:#4fc3f7" id="s-a">0</span>
         </div>
         <div class="score-divider"></div>
         <div class="score-row">
             <span class="score-label" style="color:#ff5252" id="opponent-label">الخصم</span>
-            <span class="score-val" style="color:#ff5252" id="s-b">0</span>
+            <span class="score-val"   style="color:#ff5252" id="s-b">0</span>
         </div>
         <div class="score-target">هدف: 151</div>
-        <!-- جواهر في اللعبة -->
-        <div class="ingame-gems" onclick="openShop()">💎 <span id="gem-count-game">0</span></div>
+        <div class="ingame-gems" onclick="openShop()">
+            💎 <span id="gem-count-game">0</span>
+        </div>
     </div>
 
-    <!-- أزرار القدرات الخاصة -->
+    <!-- أزرار القدرات -->
     <div id="power-buttons" class="hidden">
-        <button class="power-btn" id="pbtn-reveal"  onclick="usePower('reveal')"  title="كشف قطعة">👁️</button>
-        <button class="power-btn" id="pbtn-swap"    onclick="usePower('swap')"    title="تبديل قطعة">🔀</button>
-        <button class="power-btn" id="pbtn-freeze"  onclick="usePower('freeze')"  title="تجميد الخصم">❄️</button>
-        <button class="power-btn" id="pbtn-double"  onclick="usePower('double')"  title="نقاط مضاعفة">✖️2</button>
+        <button class="power-btn" id="pbtn-reveal" onclick="usePower('reveal')"  title="كشف قطعة">👁️</button>
+        <button class="power-btn" id="pbtn-swap"   onclick="usePower('swap')"    title="تبديل قطعة">🔀</button>
+        <button class="power-btn" id="pbtn-freeze" onclick="usePower('freeze')"  title="تجميد الخصم">❄️</button>
+        <button class="power-btn" id="pbtn-double" onclick="usePower('double')"  title="نقاط مضاعفة">✖️2</button>
     </div>
 
+    <!-- مؤشر الدور -->
     <div id="turn-indicator">دورك!</div>
-    <div id="boneyard-counter">🂠 21</div>
-    <div id="turn-timer" class="hidden"><div id="timer-bar"></div></div>
 
-    <div id="play-zone-container">
-        <div id="play-zone"></div>
+    <!-- عداد المخزن -->
+    <div id="boneyard-counter">🂠 21</div>
+
+    <!-- مؤقت الدور -->
+    <div id="turn-timer" class="hidden">
+        <div id="timer-bar"></div>
     </div>
 
+    <!-- ===== منطقة اللعب ===== -->
+    <div id="play-zone-container">
+
+        <!-- المستطيل المركزي — ملعب الدومينو -->
+        <div id="game-board">
+
+            <!-- مؤشر الطرفين في أسفل المستطيل -->
+            <div id="board-ends-indicator" class="hidden-indicator">
+                <span class="end-label">يسار</span>
+                <span class="end-value" id="left-end-val">—</span>
+                <span class="end-separator">◆</span>
+                <span class="end-value" id="right-end-val">—</span>
+                <span class="end-label">يمين</span>
+            </div>
+
+            <!-- القطع تُرسم هنا بـ absolute من script.js -->
+            <div id="play-zone"></div>
+
+        </div>
+    </div>
+
+    <!-- ===== يد اللاعب ===== -->
     <div id="hand-dock-container">
         <div id="hand-controls">
             <button id="draw-tile-btn" class="pull-btn" onclick="pullFromBoneyard()">
                 <span id="draw-btn-text">سحب قطعة +</span>
             </button>
-            <div id="hand-count-badge">7</div>
+            <div id="hand-count-badge">🀱 7</div>
         </div>
         <div id="hand-dock"></div>
     </div>
+
 </main>
 
-<!-- Toast -->
+<!-- ===== Toast ===== -->
 <div id="toast"></div>
 
-<!-- مودال نهاية الجولة -->
+<!-- ===== مودال نهاية الجولة ===== -->
 <div id="round-modal" class="hidden">
     <div class="modal-box">
         <div class="modal-fireworks"></div>
         <div class="modal-icon"  id="modal-icon">🏆</div>
         <div class="modal-title" id="modal-title">فزت!</div>
         <div class="modal-sub"   id="modal-sub"></div>
-        <!-- جواهر مكتسبة -->
         <div class="modal-gems-earned hidden" id="modal-gems-earned">
-            <span>💎</span><span id="modal-gems-val">+10</span><span>جواهر مكتسبة!</span>
+            <span>💎</span>
+            <span id="modal-gems-val">+10</span>
+            <span>جواهر مكتسبة!</span>
         </div>
         <div class="modal-scores">
             <div class="ms-item">
@@ -210,41 +257,45 @@
                 <div class="ms-label" id="modal-opp-label">الخصم</div>
             </div>
         </div>
-        <button class="modal-btn" id="modal-action-btn" onclick="closeModalAndContinue()">▶️ الجولة القادمة</button>
+        <button class="modal-btn" id="modal-action-btn">▶️ الجولة القادمة</button>
     </div>
 </div>
 
-<!-- AI يفكر -->
+<!-- ===== AI يفكر ===== -->
 <div id="ai-thinking" class="hidden">
-    <div class="ai-dots"><span></span><span></span><span></span></div>
+    <div class="ai-dots">
+        <span></span>
+        <span></span>
+        <span></span>
+    </div>
     <p>الكمبيوتر يفكر...</p>
 </div>
 
-<!-- مودال شراء الجواهر (محاكاة) -->
+<!-- ===== مودال الشراء ===== -->
 <div id="purchase-modal" class="hidden">
     <div class="purchase-box">
-        <div class="purchase-title" id="purchase-title">شراء الجواهر</div>
+        <div class="purchase-title" id="purchase-title">شراء</div>
         <div class="purchase-desc"  id="purchase-desc"></div>
         <div class="purchase-price" id="purchase-price"></div>
         <div class="purchase-btns">
-            <button class="purchase-confirm" onclick="confirmPurchase()">✅ تأكيد الشراء</button>
+            <button class="purchase-confirm" onclick="confirmPurchase()">✅ تأكيد</button>
             <button class="purchase-cancel"  onclick="closePurchaseModal()">إلغاء</button>
         </div>
-        <p style="font-size:10px;color:#555;margin-top:10px;">* الدفع عبر متجر Google Play / App Store</p>
+        <p style="font-size:10px; color:#555; margin-top:10px;">* الدفع عبر Google Play</p>
     </div>
 </div>
 
-<!-- مودال القدرة الخاصة -->
+<!-- ===== مودال القدرة ===== -->
 <div id="power-modal" class="hidden">
     <div class="modal-box" style="max-width:300px;">
-        <div class="modal-icon" id="power-modal-icon">👁️</div>
+        <div class="modal-icon"  id="power-modal-icon">👁️</div>
         <div class="modal-title" id="power-modal-title"></div>
         <div class="modal-sub"   id="power-modal-desc"></div>
         <button class="modal-btn" onclick="closePowerModal()">حسناً</button>
     </div>
 </div>
 
-<!-- مودال تأكيد الخروج -->
+<!-- ===== مودال الخروج ===== -->
 <div id="exit-modal" class="hidden">
     <div class="exit-modal-box">
         <div class="exit-modal-icon">🚶</div>
@@ -271,9 +322,11 @@
                 <span id="daily-reward-val">10</span>
                 <span>جوهرة</span>
             </div>
-            <p id="daily-reward-desc" style="font-size:11px;color:#888;margin-top:4px;">مكافأة اليوم الأول</p>
+            <p id="daily-reward-desc" style="font-size:11px; color:#888; margin-top:4px;">مكافأة اليوم الأول</p>
         </div>
-        <button class="daily-claim-btn" id="daily-claim-btn" onclick="claimDailyReward()">✅ استلام المكافأة</button>
+        <button class="daily-claim-btn" id="daily-claim-btn" onclick="claimDailyReward()">
+            ✅ استلام المكافأة
+        </button>
         <button class="daily-close-btn" onclick="closeDailyModal()">لاحقاً</button>
     </div>
 </div>
@@ -285,60 +338,63 @@
             <button class="shop-close-btn" onclick="closeAchievements()">✕</button>
             <h2 class="shop-title">🏆 الإنجازات</h2>
             <div class="shop-gem-badge">
-                <span>💎</span><span id="gem-count-ach">0</span>
+                <span>💎</span>
+                <span id="gem-count-ach">0</span>
             </div>
         </div>
         <div class="achievements-list" id="achievements-list"></div>
     </div>
 </div>
 
-<!-- ===== مودال إعلان بين الجولات ===== -->
+<!-- ===== مودال الإعلان البيني ===== -->
 <div id="interstitial-modal" class="hidden">
-    <div class="interstitial-box">
-        <div class="interstitial-skip-bar">
-            <span id="interstitial-skip-text">الإعلان ينتهي خلال <strong id="interstitial-countdown">5</strong> ثوانٍ</span>
-            <button id="interstitial-skip-btn" class="hidden" onclick="closeInterstitial()">تخطي ✕</button>
-        </div>
-        <!-- مكان الإعلان الحقيقي — يُحقن من Java -->
-        <div id="interstitial-ad-slot">
-            <div class="ad-placeholder-full">
-                <span>📺</span>
-                <p>إعلان</p>
-                <p style="font-size:10px;color:#555;">سيظهر هنا إعلان AdMob</p>
-            </div>
+    <div class="interstitial-skip-bar">
+        <span id="interstitial-skip-text">
+            الإعلان ينتهي خلال <strong id="interstitial-countdown">5</strong> ثوانٍ
+        </span>
+        <button id="interstitial-skip-btn" class="hidden" onclick="closeInterstitial()">
+            تخطي ✕
+        </button>
+    </div>
+    <div id="interstitial-ad-slot">
+        <div class="ad-placeholder-full">
+            <span>📺</span>
+            <p>إعلان</p>
+            <p style="font-size:10px; color:#555;">سيظهر هنا إعلان AdMob</p>
         </div>
     </div>
 </div>
 
-<!-- ===== مودال مشاهدة الإعلان للمكافأة ===== -->
+<!-- ===== مودال تحميل الإعلان المكافئ ===== -->
 <div id="rewarded-loading-modal" class="hidden">
     <div class="rewarded-loading-box">
         <div class="waiting-spinner"></div>
-        <p style="color:#aaa;font-size:13px;margin-top:12px;">جاري تحميل الإعلان...</p>
-        <button onclick="cancelRewardedAd()" style="margin-top:14px;background:none;border:none;color:#555;font-size:12px;cursor:pointer;font-family:inherit;">إلغاء</button>
+        <p style="color:#aaa; font-size:13px; margin-top:12px;">جاري تحميل الإعلان...</p>
+        <button onclick="cancelRewardedAd()"
+                style="margin-top:14px; background:none; border:none; color:#555; font-size:12px; cursor:pointer; font-family:inherit;">
+            إلغاء
+        </button>
     </div>
 </div>
 
-<!-- ===== شريط البنر الإعلاني (أسفل الشاشة) ===== -->
-<!-- يظهر فقط في اللعبة — يُخفى في شاشات اللوبي -->
+<!-- ===== شريط البنر ===== -->
 <div id="banner-ad-container" class="hidden">
-    <!-- مكان البنر الحقيقي — يُحقن من Java عبر AdMob -->
     <div id="banner-ad-slot">
         <div class="banner-ad-placeholder">
-            <span style="font-size:10px;color:#444;">إعلان · Ad</span>
+            <span style="font-size:10px; color:#444;">إعلان · Ad</span>
         </div>
     </div>
 </div>
 
-<!-- ===== مؤشر السلسلة اليومية (شريط علوي) ===== -->
+<!-- ===== شارة السلسلة ===== -->
 <div id="streak-badge" class="hidden" onclick="openDailyReward()">
     🔥 <span id="streak-badge-val">1</span>
 </div>
 
-<!-- ===== مودال إنجاز جديد ===== -->
-<div id="achievement-popup" class="hidden">
+<!-- ===== إشعار الإنجاز ===== -->
+<div id="achievement-popup">
     <div class="achievement-popup-box">
-        <div class="ach-popup-icon" id="ach-popup-icon">🏆</div>
+        <div class="ach-popup-icon"    id="ach-popup-icon">🏆</div>
         <div class="ach-popup-content">
             <div class="ach-popup-label">إنجاز جديد!</div>
             <div class="ach-popup-name" id="ach-popup-name"></div>
@@ -347,87 +403,10 @@
     </div>
 </div>
 
-<!-- ===== Canvas الألعاب النارية ===== -->
-<canvas id="fireworks-canvas" class="hidden" style="position:fixed;inset:0;z-index:99999;pointer-events:none;"></canvas>
-
-<!-- ===== مودال الإحصائيات ===== -->
-<div id="p1-stats-modal" class="hidden p1-modal-overlay">
-    <div class="p1-modal-box">
-        <div class="p1-modal-header">
-            <button class="shop-close-btn" onclick="closeStats()">✕</button>
-            <h2 class="shop-title">📊 إحصائياتي</h2>
-            <div></div>
-        </div>
-        <div id="p1-stats-content" class="p1-modal-content"></div>
-    </div>
-</div>
-
-<!-- ===== مودال المهام اليومية ===== -->
-<div id="p1-missions-modal" class="hidden p1-modal-overlay">
-    <div class="p1-modal-box">
-        <div class="p1-modal-header">
-            <button class="shop-close-btn" onclick="closeMissions()">✕</button>
-            <h2 class="shop-title">🎯 المهام اليومية</h2>
-            <div></div>
-        </div>
-        <div id="p1-missions-content" class="p1-modal-content"></div>
-    </div>
-</div>
-
-<!-- ===== مودال لوحة المتصدرين ===== -->
-<div id="p1-lb-modal" class="hidden p1-modal-overlay">
-    <div class="p1-modal-box">
-        <div class="p1-modal-header">
-            <button class="shop-close-btn" onclick="closeLeaderboard()">✕</button>
-            <h2 class="shop-title">🏅 لوحة المتصدرين</h2>
-            <div></div>
-        </div>
-        <div id="p1-lb-content" class="p1-modal-content"></div>
-    </div>
-</div>
-
-<!-- ===== مودالات المرحلة 2 ===== -->
-
-<!-- ثيمات الطاولة -->
-<div id="p2-themes-modal" class="hidden p1-modal-overlay">
-    <div class="p1-modal-box">
-        <div class="p1-modal-header">
-            <button class="shop-close-btn" onclick="closeThemes()">✕</button>
-            <h2 class="shop-title">🎨 ثيمات الطاولة</h2>
-            <div></div>
-        </div>
-        <div id="p2-themes-content" class="p1-modal-content"></div>
-    </div>
-</div>
-
-<!-- صناديق الجوائز -->
-<div id="p2-loot-modal" class="hidden p1-modal-overlay">
-    <div class="p1-modal-box">
-        <div class="p1-modal-header">
-            <button class="shop-close-btn" onclick="closeLootBoxes()">✕</button>
-            <h2 class="shop-title">📦 صناديق الجوائز</h2>
-            <div></div>
-        </div>
-        <div id="p2-loot-content" class="p1-modal-content"></div>
-    </div>
-</div>
-
-<!-- نتيجة فتح الصندوق -->
-<div id="p2-box-result" class="hidden p2-box-overlay">
-    <div class="p2-box-result-card">
-        <div class="p2-box-sparkles">✨ ✨ ✨</div>
-        <div id="p2-box-icon" style="font-size:64px;margin:12px 0;">📦</div>
-        <div class="p2-box-congrats">مبروك! حصلت على</div>
-        <div id="p2-box-reward-text" class="p2-box-reward"></div>
-        <div class="p2-box-sparkles">✨ ✨ ✨</div>
-    </div>
-</div>
-
-
+<!-- ===== ملفات JavaScript ===== -->
 <script src="script.js"></script>
 <script src="shop.js"></script>
 <script src="ads.js"></script>
-<script src="phase1.js"></script>
-<script src="phase2.js"></script>
+
 </body>
 </html>

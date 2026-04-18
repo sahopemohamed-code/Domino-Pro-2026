@@ -1,60 +1,311 @@
 /* ============================================
    STEP BY DOMINO PRO 2026 — script.js
-   تطوير: صهيب محمد | Step By Company
-   ============================================
-   المميزات:
-   1. وضع لعب فردي ضد الكمبيوتر (3 مستويات)
-   2. لعب ثنائي حقيقي عبر PeerJS (P2P)
-   3. مؤقت الدور مع شريط بصري
-   4. صوتيات (وضع قطعة / سحب / فوز / خسارة)
-   5. انيميشن محسّن للقطع
-   6. نظام النقاط مع الفوز عند 151
-   7. كشف التوقف (blocked)
-   8. تمييز القطع القابلة للعب
-   9. مودال نهاية الجولة احترافي
-   10. تمرير أوتوماتيكي
+   نظام الطاولة:
+   - مستطيل مركزي (game-board)
+   - حجم القطع يُحسب تلقائياً
+   - اليمين تصعد ↑  —  اليسار تنزل ↓
    ============================================ */
 
-/* ===== الحالة العامة ===== */
+/* ===== حالة الجلسة ===== */
 let session = {
-    username:    "",
-    roomID:      "",
-    scoreA:      0,
-    scoreB:      0,
-    opponentName: "الخصم",
-    hand:        [],
-    aiHand:      [],
-    boneyard:    [],
-    leftEnd:     null,
-    rightEnd:    null,
-    playerCount: 2,
-    roundNum:    1,
-    isBlocked:   false,
-    isSolo:      true,
-    difficulty:  'medium',
-    isPlayerTurn: true,
-    isHost:      false,
-    timerInterval: null,
-    timerSeconds:  0,
+    username:          "",
+    roomID:            "",
+    scoreA:            0,
+    scoreB:            0,
+    opponentName:      "الخصم",
+    hand:              [],
+    aiHand:            [],
+    boneyard:          [],
+    leftEnd:           null,
+    rightEnd:          null,
+    roundNum:          1,
+    isBlocked:         false,
+    isSolo:            true,
+    difficulty:        'medium',
+    isPlayerTurn:      true,
+    isHost:            false,
+    timerInterval:     null,
+    timerSeconds:      0,
     aiThinkingTimeout: null
 };
 
-/* ===== PeerJS للعب الجماعي ===== */
 let peer = null;
 let conn = null;
 
+/* ===== بيانات الطاولة ===== */
+let boardCenter = null;
+let boardRight  = [];
+let boardLeft   = [];
+
 /* ============================================
-   PeerJS — تهيئة الاتصال
+   حساب التخطيط تلقائياً
+   - يقيس أبعاد #game-board
+   - يحسب ts (حجم الوحدة) لضمان ملاءمة 28 قطعة
+   ============================================ */
+function calcLayout() {
+    const board = document.getElementById('game-board');
+    if (!board) return null;
+
+    const PAD       = 14;
+    const GAP       = 4;
+    const MAX_TILES = 28;
+    const COL_GAP   = 8;
+    const NUM_COLS  = 3;
+
+    const boardW = board.clientWidth  - PAD * 2;
+    const boardH = board.clientHeight - PAD * 2;
+
+    /* أقصى قطع في عمود واحد */
+    const maxPerCol = Math.ceil(MAX_TILES / 2);
+
+    /* ts من العرض: NUM_COLS * (ts*2 + GAP) + COL_GAP*2 <= boardW */
+    const tsFromW = Math.floor(
+        (boardW - COL_GAP * (NUM_COLS - 1) - GAP * NUM_COLS) / (NUM_COLS * 2)
+    );
+
+    /* ts من الارتفاع: maxPerCol * (ts + GAP) <= boardH */
+    const tsFromH = Math.floor(
+        (boardH - GAP * maxPerCol) / maxPerCol
+    );
+
+    let ts = Math.min(tsFromW, tsFromH);
+    ts = Math.max(ts, 8);
+    ts = Math.min(ts, 34);
+
+    return {
+        ts:      ts,
+        gap:     GAP,
+        colGap:  COL_GAP,
+        pad:     PAD,
+        boardW:  boardW,
+        boardH:  boardH
+    };
+}
+
+/* ============================================
+   رسم الطاولة
+   ============================================ */
+function rerenderBoard() {
+    const board = document.getElementById('game-board');
+    const zone  = document.getElementById('play-zone');
+
+    if (!board || !zone || !boardCenter) return;
+
+    zone.innerHTML = '';
+
+    const L = calcLayout();
+    if (!L) return;
+
+    const cellW = L.ts * 2 + L.gap;
+    const cellH = L.ts + L.gap;
+
+    /* نقطة المركز داخل المستطيل */
+    const midX = L.boardW / 2;
+    const midY = L.boardH / 2;
+
+    /* X لكل عمود */
+    const cxCenter = L.pad + midX - cellW / 2;
+    const cxRight  = L.pad + midX + L.colGap;
+    const cxLeft   = L.pad + midX - L.colGap - cellW;
+
+    /* Y للمركز */
+    const cyCenter = L.pad + midY - cellH / 2;
+
+    /* رسم القطعة المركزية */
+    drawTile(zone, boardCenter.v1, boardCenter.v2, boardCenter.isDouble,
+             L.ts, L.gap, cxCenter, cyCenter, true);
+
+    /* رسم اليمين — تصعد للأعلى */
+    boardRight.forEach(function(td, i) {
+        var y = cyCenter - (i + 1) * cellH;
+        drawTile(zone, td.v1, td.v2, td.isDouble, L.ts, L.gap, cxRight, y, false);
+    });
+
+    /* رسم اليسار — تنزل للأسفل */
+    boardLeft.forEach(function(td, i) {
+        var y = cyCenter + (i + 1) * cellH;
+        drawTile(zone, td.v1, td.v2, td.isDouble, L.ts, L.gap, cxLeft, y, false);
+    });
+
+    updateEndsIndicator();
+}
+
+/* ============================================
+   رسم قطعة واحدة على الطاولة
+   ============================================ */
+function drawTile(zone, v1, v2, isDouble, ts, gap, x, y, isCenter) {
+    var root    = document.documentElement;
+    var bg      = root.style.getPropertyValue('--tile-bg')     || '#fdfaf1';
+    var bdrClr  = root.style.getPropertyValue('--tile-border') || '#ccc';
+    var dotClr  = root.style.getPropertyValue('--tile-dot')    || '#111';
+
+    var cellW   = ts * 2 + gap;
+    var cellH   = ts + gap;
+    var dotSize = Math.max(2, Math.floor(ts / 5));
+    var pad     = Math.max(1, Math.floor(ts / 9));
+
+    var el = document.createElement('div');
+    el.style.position    = 'absolute';
+    el.style.background  = bg;
+    el.style.borderRadius = '4px';
+    el.style.overflow    = 'hidden';
+    el.style.display     = 'flex';
+    el.style.alignItems  = 'center';
+    el.style.animation   = 'tileIn 0.22s cubic-bezier(0.34,1.4,0.64,1)';
+
+    if (isDouble) {
+        var sz = Math.round(ts * 0.9);
+        el.style.width         = sz + 'px';
+        el.style.height        = sz + 'px';
+        el.style.flexDirection = 'column';
+        el.style.border        = '1.5px solid #d4af37';
+        el.style.boxShadow     = '0 0 6px rgba(212,175,55,0.4)';
+        el.style.left          = (x + (cellW - sz) / 2) + 'px';
+        el.style.top           = (y + (cellH - sz) / 2) + 'px';
+    } else {
+        var tileH = Math.round(ts * 0.58);
+        el.style.width         = cellW + 'px';
+        el.style.height        = tileH + 'px';
+        el.style.flexDirection = 'row';
+        el.style.border        = '1px solid ' + bdrClr;
+        el.style.boxShadow     = '1px 2px 4px rgba(0,0,0,0.45)';
+        el.style.left          = x + 'px';
+        el.style.top           = (y + (cellH - tileH) / 2) + 'px';
+    }
+
+    if (isCenter) {
+        el.style.border    = '1.5px solid var(--gold)';
+        el.style.boxShadow = '0 0 12px rgba(212,175,55,0.6)';
+    }
+
+    var h1  = buildHalf(v1, dotSize, pad, dotClr);
+    var sep = document.createElement('div');
+
+    if (isDouble) {
+        sep.style.width     = '80%';
+        sep.style.height    = '1px';
+        sep.style.background = 'rgba(0,0,0,0.15)';
+        sep.style.flexShrink = '0';
+        sep.style.alignSelf  = 'center';
+    } else {
+        sep.style.width     = '1px';
+        sep.style.height    = '65%';
+        sep.style.background = 'rgba(0,0,0,0.15)';
+        sep.style.flexShrink = '0';
+        sep.style.alignSelf  = 'center';
+    }
+
+    var h2 = buildHalf(v2, dotSize, pad, dotClr);
+
+    el.appendChild(h1);
+    el.appendChild(sep);
+    el.appendChild(h2);
+    zone.appendChild(el);
+}
+
+/* ============================================
+   بناء نصف القطعة بالنقاط
+   ============================================ */
+function buildHalf(n, dotSize, pad, dotClr) {
+    var half = document.createElement('div');
+    half.style.flex                   = '1';
+    half.style.display                = 'grid';
+    half.style.gridTemplateColumns    = 'repeat(3,1fr)';
+    half.style.gridTemplateRows       = 'repeat(3,1fr)';
+    half.style.padding                = pad + 'px';
+    half.style.minWidth               = '0';
+    half.style.minHeight              = '0';
+
+    var POS = {
+        0: [],
+        1: ['2/2'],
+        2: ['1/3', '3/1'],
+        3: ['1/3', '2/2', '3/1'],
+        4: ['1/1', '1/3', '3/1', '3/3'],
+        5: ['1/1', '1/3', '2/2', '3/1', '3/3'],
+        6: ['1/1', '1/3', '2/1', '2/3', '3/1', '3/3']
+    };
+
+    var positions = POS[n] || [];
+
+    positions.forEach(function(p) {
+        var parts = p.split('/');
+        var r = parts[0];
+        var c = parts[1];
+        var d = document.createElement('div');
+        d.style.gridRow        = r;
+        d.style.gridColumn     = c;
+        d.style.width          = dotSize + 'px';
+        d.style.height         = dotSize + 'px';
+        d.style.background     = dotClr;
+        d.style.borderRadius   = '50%';
+        d.style.alignSelf      = 'center';
+        d.style.justifySelf    = 'center';
+        half.appendChild(d);
+    });
+
+    return half;
+}
+
+/* ============================================
+   إضافة قطعة للطاولة
+   ============================================ */
+function addTileToBoard(v1, v2, side, isDouble) {
+    if (side === 'center') {
+        boardCenter      = { v1: v1, v2: v2, isDouble: isDouble };
+        boardRight       = [];
+        boardLeft        = [];
+        session.leftEnd  = v1;
+        session.rightEnd = v2;
+    } else if (side === 'right') {
+        boardRight.push({ v1: v1, v2: v2, isDouble: isDouble });
+        session.rightEnd = v2;
+    } else if (side === 'left') {
+        boardLeft.push({ v1: v1, v2: v2, isDouble: isDouble });
+        session.leftEnd  = v1;
+    }
+
+    rerenderBoard();
+}
+
+/* ============================================
+   تحديث مؤشر الطرفين
+   ============================================ */
+function updateEndsIndicator() {
+    var ind = document.getElementById('board-ends-indicator');
+    var lv  = document.getElementById('left-end-val');
+    var rv  = document.getElementById('right-end-val');
+
+    if (!ind) return;
+
+    if (session.leftEnd === null) {
+        ind.classList.add('hidden-indicator');
+        return;
+    }
+
+    ind.classList.remove('hidden-indicator');
+    if (lv) lv.textContent = session.leftEnd;
+    if (rv) rv.textContent = session.rightEnd;
+}
+
+/* إعادة الرسم عند تغيير حجم الشاشة */
+window.addEventListener('resize', function() {
+    if (boardCenter) {
+        rerenderBoard();
+    }
+});
+
+/* ============================================
+   PeerJS — الاتصال المتعدد اللاعبين
    ============================================ */
 function initPeer(asHost) {
     session.isHost = asHost;
 
-    /* معرّف الـ Peer = رمز الغرفة + دور اللاعب */
-    const peerID = asHost
+    var peerID = asHost
         ? "SBDOM-" + session.roomID + "-HOST"
         : "SBDOM-" + session.roomID + "-GUEST";
 
-    showToast(asHost ? '🔗 جاري إنشاء الغرفة...' : '🔗 جاري الاتصال بالغرفة...');
+    showToast(asHost ? '🔗 جاري إنشاء الغرفة...' : '🔗 جاري الاتصال...');
 
     peer = new Peer(peerID, {
         debug: 0,
@@ -66,44 +317,37 @@ function initPeer(asHost) {
         }
     });
 
-    peer.on('open', function(id) {
+    peer.on('open', function() {
         if (asHost) {
-            /* المضيف ينتظر الضيف */
-            updateWaitStatus('✅ الغرفة جاهزة — أرسل الرمز لصديقك: ' + session.roomID);
+            updateWaitStatus('✅ الغرفة جاهزة — الرمز: ' + session.roomID);
             peer.on('connection', function(c) {
                 conn = c;
                 setupConnection();
             });
         } else {
-            /* الضيف يتصل بالمضيف */
-            const hostID = "SBDOM-" + session.roomID + "-HOST";
-            conn = peer.connect(hostID, { reliable: true });
+            conn = peer.connect("SBDOM-" + session.roomID + "-HOST", { reliable: true });
             setupConnection();
         }
     });
 
     peer.on('error', function(err) {
         if (err.type === 'unavailable-id') {
-            showToast('❌ الغرفة مشغولة أو الرمز مكرر، جرب رمزاً آخر');
+            showToast('❌ الغرفة مشغولة، جرب رمزاً آخر');
         } else if (err.type === 'peer-unavailable') {
-            showToast('❌ لا يوجد مضيف بهذا الرمز، تأكد من الرمز');
+            showToast('❌ لا يوجد مضيف بهذا الرمز');
         } else {
             showToast('❌ خطأ في الاتصال: ' + err.type);
         }
-        console.error('PeerJS error:', err);
     });
 }
 
 function setupConnection() {
     conn.on('open', function() {
         showToast('✅ تم الاتصال بصديقك!');
-
-        /* إرسال اسم اللاعب */
         sendMsg({ type: 'hello', name: session.username });
 
         if (session.isHost) {
-            /* المضيف يبدأ اللعبة بعد ثانيتين */
-            setTimeout(() => {
+            setTimeout(function() {
                 document.getElementById('start-btn').classList.remove('hidden');
                 updateWaitStatus('🎮 جاهزان! اضغط بدأ المباراة');
             }, 500);
@@ -115,33 +359,33 @@ function setupConnection() {
     });
 
     conn.on('close', function() {
-        showToast('⚠️ انقطع الاتصال بصديقك');
+        showToast('⚠️ انقطع الاتصال');
         updateTurnIndicator('⚠️ انقطع الاتصال');
     });
 
-    conn.on('error', function(err) {
+    conn.on('error', function() {
         showToast('❌ خطأ في الاتصال');
-        console.error('Connection error:', err);
     });
 }
 
 function sendMsg(obj) {
     if (conn && conn.open) {
-        try { conn.send(obj); } catch(e) { console.error('Send error', e); }
+        try {
+            conn.send(obj);
+        } catch(e) {
+            console.error('sendMsg error:', e);
+        }
     }
 }
 
 /* ============================================
-   معالجة الرسائل الواردة من الخصم
+   معالجة رسائل الشبكة
    ============================================ */
 function handleNetMessage(data) {
-    switch(data.type) {
-
+    switch (data.type) {
         case 'hello':
-            /* استقبال اسم الخصم */
             session.opponentName = data.name;
             updateOpponentLabel(data.name);
-            /* رد بالاسم */
             sendMsg({ type: 'hello-ack', name: session.username });
             addPlayerToList(data.name, false);
             break;
@@ -153,22 +397,17 @@ function handleNetMessage(data) {
             break;
 
         case 'start-game':
-            /* المضيف أرسل بيانات الجولة */
-            session.hand        = data.guestHand;
-            session.boneyard    = data.boneyard;
-            session.leftEnd     = null;
-            session.rightEnd    = null;
-            session.isBlocked   = false;
-            session.isPlayerTurn = false; /* الضيف ينتظر */
-            session.roundNum    = data.roundNum;
-            session.scoreA      = data.scoreGuest; /* أنا الضيف = scoreGuest */
-            session.scoreB      = data.scoreHost;  /* الخصم المضيف = scoreHost */
-
-            document.getElementById('wait-screen').classList.add('hidden');
-            document.getElementById('table-stage').classList.remove('hidden');
-            document.getElementById('play-zone').innerHTML = '';
-            document.getElementById('ai-thinking').classList.add('hidden');
-
+            session.hand         = data.guestHand;
+            session.boneyard     = data.boneyard;
+            session.leftEnd      = null;
+            session.rightEnd     = null;
+            session.isBlocked    = false;
+            session.isPlayerTurn = false;
+            session.roundNum     = data.roundNum;
+            session.scoreA       = data.scoreGuest;
+            session.scoreB       = data.scoreHost;
+            resetBoard();
+            showGameUI();
             updateScoreboard();
             updateBoneyardCounter();
             renderHand();
@@ -178,44 +417,43 @@ function handleNetMessage(data) {
             break;
 
         case 'move':
-            /* الخصم لعب قطعة */
-            applyRemoteMove(data);
+            addTileToBoard(data.v1, data.v2, data.side, data.isDouble);
+            playSound('place');
+            if (data.opponentHandEmpty) {
+                setTimeout(function() { endRoundNet('lose'); }, 400);
+                return;
+            }
+            startPlayerTurn();
             break;
 
         case 'draw':
-            /* الخصم سحب من المخزن */
-            session.boneyard.pop(); /* نزيل من المخزن المحلي */
+            session.boneyard.pop();
             updateBoneyardCounter();
             showToast('🎴 ' + session.opponentName + ' سحب قطعة');
             break;
 
         case 'pass':
-            /* الخصم مرّر دوره */
             showToast('⏩ ' + session.opponentName + ' مرّر دوره');
             startPlayerTurn();
             break;
 
         case 'round-end':
-            /* الخصم أعلن نهاية الجولة */
-            /* المضيف = scoreA، الضيف = scoreB */
-            session.scoreA = data.scoreHost;
-            session.scoreB = data.scoreGuest;
+            session.scoreA = data.scoreGuest;
+            session.scoreB = data.scoreHost;
             updateScoreboard();
             showModal(data.icon, data.title, data.sub, data.isFinal);
             break;
 
         case 'next-round':
-            /* المضيف أرسل جولة جديدة */
             document.getElementById('round-modal').classList.add('hidden');
-            session.hand        = data.guestHand;
-            session.boneyard    = data.boneyard;
-            session.leftEnd     = null;
-            session.rightEnd    = null;
-            session.isBlocked   = false;
+            session.hand         = data.guestHand;
+            session.boneyard     = data.boneyard;
+            session.leftEnd      = null;
+            session.rightEnd     = null;
+            session.isBlocked    = false;
             session.isPlayerTurn = false;
-            session.roundNum    = data.roundNum;
-
-            document.getElementById('play-zone').innerHTML = '';
+            session.roundNum     = data.roundNum;
+            resetBoard();
             updateBoneyardCounter();
             renderHand();
             updateTurnIndicator('⏳ انتظر دور ' + session.opponentName);
@@ -225,67 +463,44 @@ function handleNetMessage(data) {
     }
 }
 
+function showGameUI() {
+    document.getElementById('wait-screen').classList.add('hidden');
+    document.getElementById('table-stage').classList.remove('hidden');
+    document.getElementById('menu-trigger').classList.remove('hidden');
+    document.getElementById('ai-thinking').classList.add('hidden');
+}
+
+function resetBoard() {
+    boardCenter = null;
+    boardRight  = [];
+    boardLeft   = [];
+    var z = document.getElementById('play-zone');
+    if (z) z.innerHTML = '';
+    updateEndsIndicator();
+}
+
 function updateOpponentLabel(name) {
-    const el = document.getElementById('opponent-label');
+    var el = document.getElementById('opponent-label');
     if (el) el.textContent = name;
-    const ml = document.getElementById('modal-opp-label');
+    var ml = document.getElementById('modal-opp-label');
     if (ml) ml.textContent = name;
-    const mb = document.getElementById('menu-score-b');
-    if (mb) {
-        const label = document.querySelector('#side-drawer .stat-row:nth-child(3) span:first-child');
-        if (label) label.textContent = '👤 ' + name;
-    }
 }
 
 function addPlayerToList(name, isYou) {
-    const list = document.getElementById('players-list');
+    var list = document.getElementById('players-list');
     if (list) list.innerHTML += buildPlayerItem(name, isYou);
 }
 
 function updateWaitStatus(msg) {
-    const el = document.getElementById('wait-status');
+    var el = document.getElementById('wait-status');
     if (el) el.textContent = msg;
 }
 
 /* ============================================
-   تطبيق حركة الخصم على الطاولة
+   الصوتيات
    ============================================ */
-function applyRemoteMove(data) {
-    const { v1, v2, side, isDouble } = data;
-    const el = createTileUI(v1, v2, true, isDouble);
-    const zone = document.getElementById('play-zone');
-
-    if (side === 'left') {
-        zone.insertBefore(el, zone.firstChild);
-        session.leftEnd = v1;
-    } else {
-        zone.appendChild(el);
-        session.rightEnd = v2;
-        if (side === 'center') session.leftEnd = v1;
-    }
-
-    const container = document.getElementById('play-zone-container');
-    setTimeout(() => {
-        if (side === 'left') {
-            container.scrollTo({ left: 0, behavior: 'smooth' });
-        } else {
-            container.scrollTo({ left: container.scrollWidth, behavior: 'smooth' });
-        }
-    }, 80);
-
-    playSound('place');
-
-    if (data.opponentHandEmpty) {
-        setTimeout(() => endRoundNet('lose'), 400);
-        return;
-    }
-
-    startPlayerTurn();
-}
-
-/* ===== صوتيات (Web Audio API) ===== */
-const AudioCtx = window.AudioContext || window.webkitAudioContext;
-let audioCtx = null;
+var AudioCtx = window.AudioContext || window.webkitAudioContext;
+var audioCtx = null;
 
 function getAudioCtx() {
     if (!audioCtx) {
@@ -295,136 +510,99 @@ function getAudioCtx() {
 }
 
 function playSound(type) {
-    const ctx = getAudioCtx();
+    var ctx = getAudioCtx();
     if (!ctx) return;
-    const osc  = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    const sounds = {
+
+    var sounds = {
         place: { freq: 520, type: 'sine',     dur: 0.08, vol: 0.15 },
         draw:  { freq: 320, type: 'sine',     dur: 0.12, vol: 0.10 },
-        win:   { freq: 660, type: 'triangle', dur: 0.4,  vol: 0.18 },
-        lose:  { freq: 220, type: 'sawtooth', dur: 0.3,  vol: 0.10 },
+        win:   { freq: 660, type: 'triangle', dur: 0.40, vol: 0.18 },
+        lose:  { freq: 220, type: 'sawtooth', dur: 0.30, vol: 0.10 },
         error: { freq: 180, type: 'square',   dur: 0.15, vol: 0.08 },
         tick:  { freq: 800, type: 'sine',     dur: 0.05, vol: 0.05 }
     };
-    const s = sounds[type] || sounds.place;
+
+    var s   = sounds[type] || sounds.place;
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
     osc.frequency.setValueAtTime(s.freq, ctx.currentTime);
     osc.type = s.type;
+
     gain.gain.setValueAtTime(s.vol, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + s.dur);
+
     osc.start(ctx.currentTime);
     osc.stop(ctx.currentTime + s.dur + 0.01);
 }
 
-/* ===== اختيار الوضع والصعوبة ===== */
+/* ============================================
+   وضع اللعب والصعوبة
+   ============================================ */
 function selectMode(mode) {
     session.isSolo = (mode === 'solo');
-    document.getElementById('btn-solo').classList.toggle('active', session.isSolo);
+
+    document.getElementById('btn-solo').classList.toggle('active',  session.isSolo);
     document.getElementById('btn-multi').classList.toggle('active', !session.isSolo);
+
     document.getElementById('difficulty-options').style.display = session.isSolo ? '' : 'none';
-    const ro = document.getElementById('room-options');
-    if (!session.isSolo) ro.classList.remove('hidden');
-    else ro.classList.add('hidden');
+
+    var ro = document.getElementById('room-options');
+    if (!session.isSolo) {
+        ro.classList.remove('hidden');
+    } else {
+        ro.classList.add('hidden');
+    }
 }
 
 function selectDiff(diff) {
     session.difficulty = diff;
-    /* أزل active من كل الأزرار أولاً بما فيها hardplus */
-    ['easy','medium','hard','hardplus'].forEach(d => {
-        const btn = document.getElementById('diff-' + d);
-        if (btn) btn.classList.remove('active');
+    ['easy', 'medium', 'hard'].forEach(function(d) {
+        document.getElementById('diff-' + d).classList.toggle('active', d === diff);
     });
-    /* ثم أضف active للمختار فقط */
-    const selected = document.getElementById('diff-' + diff);
-    if (selected) selected.classList.add('active');
 }
 
-/* ===== القائمة الجانبية ===== */
+/* ============================================
+   القائمة الجانبية
+   ============================================ */
 function toggleMenu() {
     document.getElementById('side-drawer').classList.toggle('active');
 }
 
-/* متحكم موحد لكل أزرار القائمة — يعمل في اللوبي وداخل اللعبة */
-function menuAction(action) {
-    /* أغلق القائمة أولاً */
-    document.getElementById('side-drawer').classList.remove('active');
-
-    const inGame = !document.getElementById('table-stage').classList.contains('hidden');
-
-    switch(action) {
-        case 'shop':
-            if (typeof openShop === 'function') openShop();
-            break;
-        case 'themes':
-            if (typeof openThemes === 'function') openThemes();
-            else showToast('جاري التحميل...');
-            break;
-        case 'loot':
-            if (typeof openLootBoxes === 'function') openLootBoxes();
-            else showToast('جاري التحميل...');
-            break;
-        case 'stats':
-            if (typeof openStats === 'function') openStats();
-            else showToast('جاري التحميل...');
-            break;
-        case 'missions':
-            if (typeof openMissions === 'function') openMissions();
-            else showToast('جاري التحميل...');
-            break;
-        case 'leaderboard':
-            if (typeof openLeaderboard === 'function') openLeaderboard();
-            else showToast('جاري التحميل...');
-            break;
-        case 'restart':
-            if (!inGame) return;
-            if (!session.isSolo && !session.isHost) {
-                showToast('فقط المضيف يستطيع إعادة الجولة');
-                return;
-            }
-            startNewRound();
-            showToast('🔄 تم إعادة الجولة');
-            break;
-        case 'exit':
-            if (inGame) {
-                /* داخل اللعبة: مودال تأكيد الخروج */
-                document.getElementById('exit-modal').classList.remove('hidden');
-            } else {
-                /* في اللوبي: أغلق القائمة فقط — لا شيء آخر */
-                showToast('أنت في الشاشة الرئيسية');
-            }
-            break;
-    }
-}
-
 document.addEventListener('click', function(e) {
-    const drawer  = document.getElementById('side-drawer');
-    const trigger = document.getElementById('menu-trigger');
-    if (drawer.classList.contains('active') &&
+    var drawer  = document.getElementById('side-drawer');
+    var trigger = document.getElementById('menu-trigger');
+
+    if (!drawer || !trigger) return;
+
+    if (
+        drawer.classList.contains('active') &&
         !drawer.contains(e.target) &&
-        !trigger.contains(e.target)) {
+        !trigger.contains(e.target)
+    ) {
         drawer.classList.remove('active');
     }
 });
 
-/* ===== إعداد اللوبي ===== */
+/* ============================================
+   اللوبي
+   ============================================ */
 function prepareLobby() {
-    const nameInput = document.getElementById('username');
-    session.username = nameInput.value.trim();
+    var ni = document.getElementById('username');
+    session.username = ni.value.trim();
+
     if (!session.username) {
-        nameInput.classList.add('invalid');
-        setTimeout(() => nameInput.classList.remove('invalid'), 400);
+        ni.classList.add('invalid');
+        setTimeout(function() { ni.classList.remove('invalid'); }, 400);
         showToast('أدخل اسمك الكريم أولاً 😊');
         return;
     }
 
-    /* تحديث اسم اللاعب في القائمة الجانبية */
-    const nameEl = document.getElementById('player-display-name');
-    if (nameEl) nameEl.textContent = '👤 ' + session.username;
-
     if (session.isSolo) {
-        session.roomID = "تحدي-الكمبيوتر";
+        session.roomID = 'solo';
         document.getElementById('lobby-screen').classList.add('hidden');
         document.getElementById('wait-screen').classList.remove('hidden');
         document.getElementById('players-list').innerHTML =
@@ -432,69 +610,53 @@ function prepareLobby() {
             buildPlayerItem('🤖 الكمبيوتر', false);
         document.getElementById('start-btn').classList.remove('hidden');
         document.getElementById('wait-status').textContent = '🤖 اللعب ضد الكمبيوتر';
-
     } else {
-        /* وضع متعدد اللاعبين */
-        const codeInput = document.getElementById('room-code').value.trim().toUpperCase();
-        if (!codeInput) {
+        var code = document.getElementById('room-code').value.trim().toUpperCase();
+        if (!code) {
             showToast('أدخل رمز الغرفة أولاً 🔑');
             return;
         }
-        session.roomID = codeInput;
-
+        session.roomID = code;
         document.getElementById('lobby-screen').classList.add('hidden');
         document.getElementById('wait-screen').classList.remove('hidden');
-        document.getElementById('players-list').innerHTML =
-            buildPlayerItem(session.username, true);
+        document.getElementById('players-list').innerHTML = buildPlayerItem(session.username, true);
         document.getElementById('start-btn').classList.add('hidden');
         updateWaitStatus('🔗 جاري الاتصال...');
-
-        /* حاول كمضيف أولاً، إذا فشل اتصل كضيف */
         tryConnectAsHost();
     }
 }
 
 function tryConnectAsHost() {
-    /* حاول إنشاء الغرفة كمضيف */
-    const testPeer = new Peer("SBDOM-" + session.roomID + "-HOST", {
+    var tp = new Peer("SBDOM-" + session.roomID + "-HOST", {
         debug: 0,
         config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
     });
 
-    testPeer.on('open', function() {
-        /* نجح = أنت المضيف */
-        testPeer.destroy();
-        setTimeout(() => initPeer(true), 300);
+    tp.on('open', function() {
+        tp.destroy();
+        setTimeout(function() { initPeer(true); }, 300);
     });
 
-    testPeer.on('error', function(err) {
-        testPeer.destroy();
+    tp.on('error', function(err) {
+        tp.destroy();
         if (err.type === 'unavailable-id') {
-            /* الغرفة موجودة = أنت ضيف */
-            setTimeout(() => initPeer(false), 300);
+            setTimeout(function() { initPeer(false); }, 300);
         } else {
-            showToast('❌ خطأ في الاتصال، تأكد من اتصالك بالإنترنت');
+            showToast('❌ خطأ في الاتصال');
         }
     });
 }
 
 function buildPlayerItem(name, isYou) {
-    return `<div class="player-item">
-        <div class="player-dot"></div>
-        <span>${name}${isYou ? ' (أنت)' : ''}</span>
-    </div>`;
+    return '<div class="player-item">' +
+               '<div class="player-dot"></div>' +
+               '<span>' + name + (isYou ? ' (أنت)' : '') + '</span>' +
+           '</div>';
 }
 
-/* ===== بدء اللعبة (من زر البدء - المضيف فقط أو Solo) ===== */
 function startEngine() {
     document.getElementById('player-display-name').innerText = '👤 ' + session.username;
-    document.getElementById('room-display-id').innerText = session.roomID;
-
-    /* إظهار أزرار اللعبة فقط بعد البدء */
-    const restartBtn = document.getElementById('menu-btn-restart');
-    const exitBtn    = document.getElementById('menu-btn-exit');
-    if (restartBtn) restartBtn.style.display = '';
-    if (exitBtn)    exitBtn.style.display    = '';
+    document.getElementById('room-display-id').innerText     = session.roomID;
 
     if (!session.isSolo) {
         updateOpponentLabel(session.opponentName);
@@ -506,16 +668,29 @@ function startEngine() {
     startNewRound();
 }
 
-function exitSession() { menuAction('exit'); }
-function restartRound() { menuAction('restart'); }
+function exitSession() {
+    document.getElementById('side-drawer').classList.remove('active');
+    document.getElementById('exit-modal').classList.remove('hidden');
+}
 
 function closeExitModal() {
     document.getElementById('exit-modal').classList.add('hidden');
 }
+
 function confirmExit() {
-    if (typeof conn !== 'undefined' && conn) conn.close();
-    if (typeof peer !== 'undefined' && peer) peer.destroy();
+    if (conn) conn.close();
+    if (peer) peer.destroy();
     location.reload();
+}
+
+function restartRound() {
+    document.getElementById('side-drawer').classList.remove('active');
+    if (!session.isSolo && !session.isHost) {
+        showToast('فقط المضيف يستطيع إعادة الجولة');
+        return;
+    }
+    startNewRound();
+    showToast('🔄 تم إعادة الجولة');
 }
 
 /* ============================================
@@ -524,62 +699,47 @@ function confirmExit() {
 function startNewRound() {
     clearTurnTimer();
     clearTimeout(session.aiThinkingTimeout);
+    resetBoard();
 
-    /* توليد ورق كامل 28 قطعة */
-    let deck = [];
-    for (let i = 0; i <= 6; i++)
-        for (let j = i; j <= 6; j++)
+    /* توليد 28 قطعة وخلطها */
+    var deck = [];
+    for (var i = 0; i <= 6; i++) {
+        for (var j = i; j <= 6; j++) {
             deck.push([i, j]);
-
-    /* خلط Fisher-Yates */
-    for (let k = deck.length - 1; k > 0; k--) {
-        const r = Math.floor(Math.random() * (k + 1));
-        [deck[k], deck[r]] = [deck[r], deck[k]];
+        }
+    }
+    for (var k = deck.length - 1; k > 0; k--) {
+        var r = Math.floor(Math.random() * (k + 1));
+        var temp = deck[k];
+        deck[k] = deck[r];
+        deck[r] = temp;
     }
 
     if (session.isSolo) {
-        /* Solo: 7 للاعب + 7 للـ AI */
-        session.hand     = deck.slice(0, 7);
-        session.aiHand   = deck.slice(7, 14);
-        session.boneyard = deck.slice(14);
+        session.hand         = deck.slice(0,  7);
+        session.aiHand       = deck.slice(7,  14);
+        session.boneyard     = deck.slice(14);
         session.isPlayerTurn = true;
-
-        document.getElementById('wait-screen').classList.add('hidden');
-        document.getElementById('table-stage').classList.remove('hidden');
-        document.getElementById('menu-trigger').classList.remove('hidden');
-
+        showGameUI();
     } else {
-        /* Multiplayer: المضيف يوزع ويرسل */
-        const hostHand  = deck.slice(0, 7);
-        const guestHand = deck.slice(7, 14);
-        const boneyard  = deck.slice(14);
-
-        session.hand     = hostHand;
-        session.aiHand   = [];
-        session.boneyard = boneyard;
-        session.isPlayerTurn = true; /* المضيف يبدأ */
-
-        /* إرسال بيانات الجولة للضيف */
+        session.hand         = deck.slice(0,  7);
+        session.aiHand       = [];
+        session.boneyard     = deck.slice(14);
+        session.isPlayerTurn = true;
         sendMsg({
             type:       'start-game',
-            guestHand:  guestHand,
-            boneyard:   boneyard,
+            guestHand:  deck.slice(7, 14),
+            boneyard:   session.boneyard,
             roundNum:   session.roundNum,
             scoreHost:  session.scoreA,
             scoreGuest: session.scoreB
         });
-
-        document.getElementById('wait-screen').classList.add('hidden');
-        document.getElementById('table-stage').classList.remove('hidden');
-        document.getElementById('menu-trigger').classList.remove('hidden');
+        showGameUI();
     }
 
     session.leftEnd   = null;
     session.rightEnd  = null;
     session.isBlocked = false;
-
-    document.getElementById('play-zone').innerHTML = '';
-    document.getElementById('ai-thinking').classList.add('hidden');
 
     updateBoneyardCounter();
     renderHand();
@@ -592,34 +752,43 @@ function startNewRound() {
 /* ============================================
    مؤقت الدور
    ============================================ */
-const TURN_SECONDS = 30;
+var TURN_SECONDS = 30;
 
 function startTurnTimer() {
     clearTurnTimer();
     if (!session.isPlayerTurn) return;
+
     session.timerSeconds = TURN_SECONDS;
 
-    const timer = document.getElementById('turn-timer');
-    const bar   = document.getElementById('timer-bar');
+    var timer = document.getElementById('turn-timer');
+    var bar   = document.getElementById('timer-bar');
+
     timer.classList.remove('hidden');
     bar.style.width      = '100%';
     bar.style.background = 'linear-gradient(90deg, #4caf50, #8bc34a)';
     bar.style.transition = 'none';
 
-    requestAnimationFrame(() => {
-        bar.style.transition = `width ${TURN_SECONDS}s linear`;
+    requestAnimationFrame(function() {
+        bar.style.transition = 'width ' + TURN_SECONDS + 's linear';
         bar.style.width      = '0%';
     });
 
-    session.timerInterval = setInterval(() => {
+    session.timerInterval = setInterval(function() {
         session.timerSeconds--;
-        if (session.timerSeconds <= 10)
+
+        if (session.timerSeconds <= 10) {
             bar.style.background = 'linear-gradient(90deg, #f44336, #ff9800)';
-        if (session.timerSeconds <= 5) playSound('tick');
+        }
+        if (session.timerSeconds <= 5) {
+            playSound('tick');
+        }
         if (session.timerSeconds <= 0) {
             clearTurnTimer();
-            if (session.boneyard.length > 0) autoDrawOnTimeout();
-            else skipTurn();
+            if (session.boneyard.length > 0) {
+                autoDrawOnTimeout();
+            } else {
+                skipTurn();
+            }
         }
     }, 1000);
 }
@@ -627,8 +796,8 @@ function startTurnTimer() {
 function clearTurnTimer() {
     clearInterval(session.timerInterval);
     session.timerInterval = null;
-    const timer = document.getElementById('turn-timer');
-    if (timer) timer.classList.add('hidden');
+    var t = document.getElementById('turn-timer');
+    if (t) t.classList.add('hidden');
 }
 
 function autoDrawOnTimeout() {
@@ -643,89 +812,145 @@ function skipTurn() {
 }
 
 /* ============================================
-   عرض يد اللاعب
+   يد اللاعب
    ============================================ */
 function renderHand() {
-    const dock = document.getElementById('hand-dock');
+    var dock = document.getElementById('hand-dock');
     dock.innerHTML = '';
 
-    session.hand.forEach((tile, idx) => {
-        const canPlay = canTilePlay(tile);
-        const el = createTileUI(tile[0], tile[1], false, false);
+    session.hand.forEach(function(tile, idx) {
+        var canPlay = canTilePlay(tile);
+        var el      = createHandTile(tile[0], tile[1]);
+
         if (canPlay) el.classList.add('playable');
-        el.onclick = () => {
+
+        el.onclick = function() {
             if (!session.isPlayerTurn) {
                 showToast('⏳ انتظر دورك');
                 return;
             }
             tryToPlay(idx);
         };
+
         dock.appendChild(el);
     });
 
-    const drawBtn  = document.getElementById('draw-tile-btn');
-    const drawText = document.getElementById('draw-btn-text');
+    var drawBtn  = document.getElementById('draw-tile-btn');
+    var drawText = document.getElementById('draw-btn-text');
+
     if (drawBtn) {
-        const empty = session.boneyard.length === 0;
-        drawBtn.disabled = empty || !session.isPlayerTurn;
+        var empty = session.boneyard.length === 0;
+        drawBtn.disabled     = empty || !session.isPlayerTurn;
         drawText.textContent = empty
             ? '🚫 المخزن فارغ'
-            : `سحب قطعة (${session.boneyard.length}) +`;
+            : 'سحب قطعة (' + session.boneyard.length + ') +';
     }
 
-    const badge = document.getElementById('hand-count-badge');
-    if (badge) badge.textContent = `🀱 ${session.hand.length}`;
+    var badge = document.getElementById('hand-count-badge');
+    if (badge) badge.textContent = '🀱 ' + session.hand.length;
 
     checkBlocked();
 }
 
+function createHandTile(n1, n2) {
+    var div  = document.createElement('div');
+    div.className = 'domino-tile';
+
+    var root = document.documentElement;
+    var bg   = root.style.getPropertyValue('--tile-bg')     || '#fdfaf1';
+    var bdr  = root.style.getPropertyValue('--tile-border') || '#ccc';
+
+    if (bg  !== '#fdfaf1') div.style.background  = bg;
+    if (bdr !== '#ccc')    div.style.borderColor = bdr;
+
+    var h1  = document.createElement('div');
+    h1.className = 'tile-half';
+    h1.innerHTML = getDots(n1);
+
+    var sep = document.createElement('div');
+    sep.className = 'divider';
+
+    var h2  = document.createElement('div');
+    h2.className = 'tile-half';
+    h2.innerHTML = getDots(n2);
+
+    div.appendChild(h1);
+    div.appendChild(sep);
+    div.appendChild(h2);
+
+    return div;
+}
+
+function getDots(n) {
+    var patterns = {
+        0: [],
+        1: ['p1'],
+        2: ['ptr', 'pbl'],
+        3: ['ptr', 'p1', 'pbl'],
+        4: ['ptl', 'ptr', 'pbl', 'pbr'],
+        5: ['ptl', 'ptr', 'p1',  'pbl', 'pbr'],
+        6: ['ptl', 'ptr', 'pml', 'pmr', 'pbl', 'pbr']
+    };
+
+    var dots = patterns[n] || [];
+    var html = '';
+
+    dots.forEach(function(cls) {
+        html += '<div class="dot ' + cls + '"></div>';
+    });
+
+    return html;
+}
+
 /* ============================================
-   هل تستطيع القطعة اللعب؟
+   منطق اللعب
    ============================================ */
 function canTilePlay(tile) {
     if (session.leftEnd === null) return true;
+
     return tile[0] === session.leftEnd  ||
            tile[1] === session.leftEnd  ||
            tile[0] === session.rightEnd ||
            tile[1] === session.rightEnd;
 }
 
-/* ============================================
-   كشف التوقف
-   ============================================ */
 function checkBlocked() {
     if (session.leftEnd === null) return;
-    const anyPlayable = session.hand.some(t => canTilePlay(t));
+
+    var anyPlayable = session.hand.some(function(t) {
+        return canTilePlay(t);
+    });
+
     if (!anyPlayable && session.boneyard.length === 0) {
         session.isBlocked = true;
         clearTurnTimer();
         updateTurnIndicator('⛔ اللعبة موقوفة!');
-        setTimeout(() => {
+        setTimeout(function() {
             if (session.isSolo) endRound('blocked');
             else endRoundNet('blocked');
         }, 1400);
     }
 }
 
-/* ============================================
-   محاولة لعب قطعة (اللاعب)
-   ============================================ */
 function tryToPlay(idx) {
-    const tile = session.hand[idx];
+    var tile = session.hand[idx];
 
     if (session.leftEnd === null) {
         executeMove(idx, 'center', tile[0], tile[1], 'player');
         return;
     }
 
-    if (tile[0] === session.rightEnd) {
+    var rE = session.rightEnd;
+    var lE = session.leftEnd;
+
+    if (tile[0] === rE) {
         executeMove(idx, 'right', tile[0], tile[1], 'player');
-    } else if (tile[1] === session.rightEnd) {
+    } else if (tile[1] === rE) {
         executeMove(idx, 'right', tile[1], tile[0], 'player');
-    } else if (tile[1] === session.leftEnd) {
-        executeMove(idx, 'left', tile[0], tile[1], 'player');
-    } else if (tile[0] === session.leftEnd) {
-        executeMove(idx, 'left', tile[1], tile[0], 'player');
+    } else if (tile[1] === lE) {
+        executeMove(idx, 'left',  tile[0], tile[1], 'player');
+    } else if (tile[0] === lE) {
+        executeMove(idx, 'left',  tile[1], tile[0], 'player');
     } else {
         shakeHandTile(idx);
         showToast('هذه القطعة لا تناسب الآن 🚫');
@@ -734,52 +959,50 @@ function tryToPlay(idx) {
 }
 
 function shakeHandTile(idx) {
-    const tiles = document.querySelectorAll('#hand-dock .domino-tile');
+    var tiles = document.querySelectorAll('#hand-dock .domino-tile');
     if (tiles[idx]) {
         tiles[idx].classList.add('invalid');
-        setTimeout(() => tiles[idx].classList.remove('invalid'), 350);
+        setTimeout(function() {
+            if (tiles[idx]) tiles[idx].classList.remove('invalid');
+        }, 350);
     }
 }
 
-/* ============================================
-   تنفيذ الحركة
-   ============================================ */
 function executeMove(idx, side, v1, v2, who) {
-    const isDouble = (v1 === v2);
-    const el = createTileUI(v1, v2, true, isDouble);
-    const zone = document.getElementById('play-zone');
+    var isDouble = (v1 === v2);
 
-    if (who === 'player') session.hand.splice(idx, 1);
-    else session.aiHand.splice(idx, 1);
-
-    if (side === 'left') {
-        zone.insertBefore(el, zone.firstChild);
-        session.leftEnd = v1;
+    if (who === 'player') {
+        session.hand.splice(idx, 1);
     } else {
-        zone.appendChild(el);
-        session.rightEnd = v2;
-        if (side === 'center') session.leftEnd = v1;
+        session.aiHand.splice(idx, 1);
     }
 
-    const container = document.getElementById('play-zone-container');
-    setTimeout(() => {
-        if (side === 'left') {
-            container.scrollTo({ left: 0, behavior: 'smooth' });
-        } else {
-            container.scrollTo({ left: container.scrollWidth, behavior: 'smooth' });
-        }
-    }, 80);
+    if (side === 'center') {
+        session.leftEnd  = v1;
+        session.rightEnd = v2;
+    } else if (side === 'right') {
+        session.rightEnd = v2;
+    } else if (side === 'left') {
+        session.leftEnd  = v1;
+    }
+
+    addTileToBoard(v1, v2, side, isDouble);
     playSound('place');
+
+    if (who === 'player' && typeof onTilePlaced === 'function') {
+        onTilePlaced();
+    }
 
     if (who === 'player') {
         clearTurnTimer();
 
-        /* إرسال الحركة للخصم في وضع المتعدد */
         if (!session.isSolo) {
             sendMsg({
-                type: 'move',
-                v1, v2, side,
-                isDouble,
+                type:              'move',
+                v1:                v1,
+                v2:                v2,
+                side:              side,
+                isDouble:          isDouble,
                 opponentHandEmpty: session.hand.length === 0
             });
         }
@@ -787,34 +1010,34 @@ function executeMove(idx, side, v1, v2, who) {
         renderHand();
 
         if (session.hand.length === 0) {
-            setTimeout(() => {
+            setTimeout(function() {
                 if (session.isSolo) endRound('win');
                 else endRoundNet('win');
             }, 300);
             return;
         }
+
         endPlayerTurn();
 
     } else {
-        /* AI */
         renderHand();
+
         if (session.aiHand.length === 0) {
-            setTimeout(() => endRound('lose'), 300);
+            setTimeout(function() { endRound('lose'); }, 300);
             return;
         }
+
         startPlayerTurn();
     }
 }
 
-/* ============================================
-   إنهاء دور اللاعب
-   ============================================ */
 function endPlayerTurn() {
     session.isPlayerTurn = false;
+
     if (session.isSolo) {
         updateTurnIndicator('🤖 دور الكمبيوتر...');
-        const delay = { easy: 1800, medium: 1200, hard: 700 }[session.difficulty] || 1200;
-        session.aiThinkingTimeout = setTimeout(() => aiTakeTurn(), delay);
+        var delay = { easy: 1800, medium: 1200, hard: 700 }[session.difficulty] || 1200;
+        session.aiThinkingTimeout = setTimeout(aiTakeTurn, delay);
         document.getElementById('ai-thinking').classList.remove('hidden');
     } else {
         updateTurnIndicator('⏳ دور ' + session.opponentName);
@@ -830,21 +1053,12 @@ function startPlayerTurn() {
 }
 
 /* ============================================
-   ذكاء اصطناعي
+   الذكاء الاصطناعي
    ============================================ */
 function aiTakeTurn() {
     document.getElementById('ai-thinking').classList.add('hidden');
 
-    /* ===== تجميد الخصم ===== */
-    if (typeof store !== 'undefined' && store.frozenTurns > 0) {
-        store.frozenTurns--;
-        if (typeof saveStore === 'function') saveStore();
-        showToast('❄️ الخصم مجمد — تم تخطي دوره!');
-        startPlayerTurn();
-        return;
-    }
-
-    const move = findAIMove();
+    var move = findAIMove();
 
     if (move) {
         executeMove(move.idx, move.side, move.v1, move.v2, 'ai');
@@ -862,64 +1076,91 @@ function aiTakeTurn() {
 }
 
 function findAIMove() {
-    const playable = [];
-    session.aiHand.forEach((tile, idx) => {
+    var playable = [];
+
+    session.aiHand.forEach(function(tile, idx) {
         if (session.leftEnd === null) {
-            playable.push({ idx, side: 'center', v1: tile[0], v2: tile[1], score: tile[0] + tile[1] });
+            playable.push({
+                idx:   idx,
+                side:  'center',
+                v1:    tile[0],
+                v2:    tile[1],
+                score: tile[0] + tile[1]
+            });
             return;
         }
-        if (tile[0] === session.rightEnd)
-            playable.push({ idx, side: 'right', v1: tile[0], v2: tile[1], score: tile[0]+tile[1] });
-        else if (tile[1] === session.rightEnd)
-            playable.push({ idx, side: 'right', v1: tile[1], v2: tile[0], score: tile[0]+tile[1] });
-        if (tile[1] === session.leftEnd)
-            playable.push({ idx, side: 'left', v1: tile[0], v2: tile[1], score: tile[0]+tile[1] });
-        else if (tile[0] === session.leftEnd && tile[1] !== session.rightEnd)
-            playable.push({ idx, side: 'left', v1: tile[1], v2: tile[0], score: tile[0]+tile[1] });
+
+        if (tile[0] === session.rightEnd) {
+            playable.push({ idx:idx, side:'right', v1:tile[0], v2:tile[1], score:tile[0]+tile[1] });
+        } else if (tile[1] === session.rightEnd) {
+            playable.push({ idx:idx, side:'right', v1:tile[1], v2:tile[0], score:tile[0]+tile[1] });
+        }
+
+        if (tile[1] === session.leftEnd) {
+            playable.push({ idx:idx, side:'left', v1:tile[0], v2:tile[1], score:tile[0]+tile[1] });
+        } else if (tile[0] === session.leftEnd && tile[1] !== session.rightEnd) {
+            playable.push({ idx:idx, side:'left', v1:tile[1], v2:tile[0], score:tile[0]+tile[1] });
+        }
     });
 
-    if (playable.length === 0) return null;
+    if (!playable.length) return null;
 
-    if (session.difficulty === 'easy')
+    if (session.difficulty === 'easy') {
         return playable[Math.floor(Math.random() * playable.length)];
-    if (session.difficulty === 'medium')
-        return playable.sort((a,b) => b.score - a.score)[0];
+    }
 
-    const doubles = playable.filter(m => m.v1 === m.v2);
-    return (doubles.length > 0 ? doubles : playable).sort((a,b) => b.score - a.score)[0];
+    if (session.difficulty === 'medium') {
+        return playable.sort(function(a, b) { return b.score - a.score; })[0];
+    }
+
+    /* صعب: يفضل الدوبل */
+    var doubles = playable.filter(function(m) { return m.v1 === m.v2; });
+    var pool    = doubles.length ? doubles : playable;
+    return pool.sort(function(a, b) { return b.score - a.score; })[0];
 }
 
 function aiDrawFromBoneyard() {
-    if (session.boneyard.length === 0) { startPlayerTurn(); return; }
-    const newTile = session.boneyard.pop();
+    if (!session.boneyard.length) {
+        startPlayerTurn();
+        return;
+    }
+
+    var newTile = session.boneyard.pop();
     session.aiHand.push(newTile);
     updateBoneyardCounter();
     playSound('draw');
 
-    const canPlay = session.leftEnd === null ||
-        newTile[0] === session.leftEnd || newTile[1] === session.leftEnd ||
-        newTile[0] === session.rightEnd || newTile[1] === session.rightEnd;
+    var canPlay =
+        session.leftEnd === null  ||
+        newTile[0] === session.leftEnd   ||
+        newTile[1] === session.leftEnd   ||
+        newTile[0] === session.rightEnd  ||
+        newTile[1] === session.rightEnd;
 
     if (canPlay) {
-        setTimeout(() => {
-            const lastIdx = session.aiHand.length - 1;
-            const tile = session.aiHand[lastIdx];
-            let move = null;
-            if (session.leftEnd === null)
-                move = { idx: lastIdx, side: 'center', v1: tile[0], v2: tile[1] };
-            else if (tile[0] === session.rightEnd)
-                move = { idx: lastIdx, side: 'right', v1: tile[0], v2: tile[1] };
-            else if (tile[1] === session.rightEnd)
-                move = { idx: lastIdx, side: 'right', v1: tile[1], v2: tile[0] };
-            else if (tile[1] === session.leftEnd)
-                move = { idx: lastIdx, side: 'left', v1: tile[0], v2: tile[1] };
-            else if (tile[0] === session.leftEnd)
-                move = { idx: lastIdx, side: 'left', v1: tile[1], v2: tile[0] };
-            if (move) executeMove(move.idx, move.side, move.v1, move.v2, 'ai');
-            else startPlayerTurn();
+        setTimeout(function() {
+            var li   = session.aiHand.length - 1;
+            var tile = session.aiHand[li];
+            var mv   = null;
+
+            if (session.leftEnd === null) {
+                mv = { idx:li, side:'center', v1:tile[0], v2:tile[1] };
+            } else if (tile[0] === session.rightEnd) {
+                mv = { idx:li, side:'right', v1:tile[0], v2:tile[1] };
+            } else if (tile[1] === session.rightEnd) {
+                mv = { idx:li, side:'right', v1:tile[1], v2:tile[0] };
+            } else if (tile[1] === session.leftEnd) {
+                mv = { idx:li, side:'left',  v1:tile[0], v2:tile[1] };
+            } else if (tile[0] === session.leftEnd) {
+                mv = { idx:li, side:'left',  v1:tile[1], v2:tile[0] };
+            }
+
+            if (mv) executeMove(mv.idx, mv.side, mv.v1, mv.v2, 'ai');
+            else    startPlayerTurn();
         }, 500);
-    } else if (session.boneyard.length > 0) {
-        setTimeout(() => aiDrawFromBoneyard(), 400);
+
+    } else if (session.boneyard.length) {
+        setTimeout(aiDrawFromBoneyard, 400);
     } else {
         startPlayerTurn();
     }
@@ -927,128 +1168,138 @@ function aiDrawFromBoneyard() {
 
 function checkAIBlocked() {
     if (session.leftEnd === null) return;
-    const anyPlayable = session.aiHand.some(t => canTilePlay(t));
-    if (!anyPlayable && session.boneyard.length === 0 &&
-        !session.hand.some(t => canTilePlay(t))) {
+
+    var aiPlayable = session.aiHand.some(function(t) { return canTilePlay(t); });
+    var plPlayable = session.hand.some(function(t)   { return canTilePlay(t); });
+
+    if (!aiPlayable && !session.boneyard.length && !plPlayable) {
         session.isBlocked = true;
         clearTurnTimer();
-        setTimeout(() => endRound('blocked'), 1000);
+        setTimeout(function() { endRound('blocked'); }, 1000);
     }
 }
 
 /* ============================================
-   السحب من المخزن (اللاعب)
+   السحب من المخزن
    ============================================ */
-function pullFromBoneyard(auto = false) {
+function pullFromBoneyard(auto) {
+    if (auto === undefined) auto = false;
+
     if (!session.isPlayerTurn && !auto) {
         showToast('⏳ انتظر دورك');
         return;
     }
-    if (session.boneyard.length === 0) {
+
+    if (!session.boneyard.length) {
         showToast('المخزن فارغ تماماً! ⚠️');
         return;
     }
-    clearTurnTimer();
 
-    /* إخبار الخصم في وضع المتعدد */
+    clearTurnTimer();
     if (!session.isSolo) sendMsg({ type: 'draw' });
 
-    const newTile = session.boneyard.pop();
+    var newTile = session.boneyard.pop();
     session.hand.push(newTile);
     updateBoneyardCounter();
     renderHand();
     playSound('draw');
     showToast('🎴 سحبت قطعة جديدة');
 
-    const canPlay = session.leftEnd === null ||
-        newTile[0] === session.leftEnd || newTile[1] === session.leftEnd ||
-        newTile[0] === session.rightEnd || newTile[1] === session.rightEnd;
+    var canPlay =
+        session.leftEnd === null  ||
+        newTile[0] === session.leftEnd   ||
+        newTile[1] === session.leftEnd   ||
+        newTile[0] === session.rightEnd  ||
+        newTile[1] === session.rightEnd;
 
     if (canPlay) {
         showToast('✅ يمكنك لعب القطعة الجديدة!');
         startTurnTimer();
-    } else if (session.boneyard.length > 0) {
+    } else if (session.boneyard.length) {
         showToast('🎴 لا تناسب، سحب مرة أخرى...');
-        setTimeout(() => pullFromBoneyard(true), 700);
+        setTimeout(function() { pullFromBoneyard(true); }, 700);
     } else {
         showToast('⚠️ المخزن فارغ، مرر دورك');
         if (!session.isSolo) sendMsg({ type: 'pass' });
-        setTimeout(() => endPlayerTurn(), 800);
+        setTimeout(function() { endPlayerTurn(); }, 800);
     }
 }
 
 /* ============================================
-   نهاية الجولة — Solo
+   نهاية الجولة — ضد الكمبيوتر
    ============================================ */
 function endRound(reason) {
     clearTurnTimer();
     clearTimeout(session.aiThinkingTimeout);
     document.getElementById('ai-thinking').classList.add('hidden');
 
-    let icon, title, sub;
+    var icon, title, sub;
+
     if (reason === 'win') {
-        const aSum = session.aiHand.reduce((s,t) => s+t[0]+t[1], 0);
-        /* ===== نقاط مضاعفة ===== */
-        const multiplier = (typeof store !== 'undefined' && store.activeDoublePoints) ? 2 : 1;
-        const earned     = aSum * multiplier;
-        session.scoreA  += earned;
-        icon  = '🏆'; title = 'فزت بالجولة!';
-        sub   = multiplier === 2
-            ? `نقاط مضاعفة! ✖️2 حصلت على ${earned} نقطة (${aSum}×2)`
-            : `حصلت على ${earned} نقطة من يد الخصم`;
+        session.scoreA += 25;
+        icon  = '🏆';
+        title = 'فزت بالجولة!';
+        sub   = 'أحسنت! أنهيت قطعك أولاً';
         playSound('win');
+
     } else if (reason === 'lose') {
-        const pSum = session.hand.reduce((s,t) => s+t[0]+t[1], 0);
-        session.scoreB += pSum;
-        icon = '😔'; title = 'الكمبيوتر فاز!';
-        sub = `الكمبيوتر أخذ ${pSum} نقطة من يدك`; playSound('lose');
+        session.scoreB += 25;
+        icon  = '😔';
+        title = 'الكمبيوتر فاز!';
+        sub   = 'أنهى قطعه قبلك';
+        playSound('lose');
+
     } else {
-        const pSum = session.hand.reduce((s,t) => s+t[0]+t[1], 0);
-        const aSum = session.aiHand.reduce((s,t) => s+t[0]+t[1], 0);
-        const multiplier = (typeof store !== 'undefined' && store.activeDoublePoints) ? 2 : 1;
+        var pSum = session.hand.reduce(function(s, t) { return s + t[0] + t[1]; }, 0);
+        var aSum = session.aiHand.reduce(function(s, t) { return s + t[0] + t[1]; }, 0);
+
         if (pSum < aSum) {
-            session.scoreA += aSum * multiplier;
-            icon = '🤝'; title = 'موقوفة — فزت!';
-            sub  = multiplier === 2
-                ? `نقاط مضاعفة! يدك (${pSum}) < الكمبيوتر (${aSum}) ← +${aSum*2}`
-                : `يدك (${pSum}) < الكمبيوتر (${aSum}) ← +${aSum}`;
+            session.scoreA += 15;
+            icon  = '🤝';
+            title = 'موقوفة — فزت!';
+            sub   = 'يدك (' + pSum + ') < الكمبيوتر (' + aSum + ')';
             playSound('win');
         } else if (aSum < pSum) {
-            session.scoreB += pSum;
-            icon = '😅'; title = 'موقوفة — الكمبيوتر فاز';
-            sub  = `الكمبيوتر (${aSum}) < يدك (${pSum}) ← +${pSum}`; playSound('lose');
+            session.scoreB += 15;
+            icon  = '😅';
+            title = 'موقوفة — الكمبيوتر فاز';
+            sub   = 'الكمبيوتر (' + aSum + ') < يدك (' + pSum + ')';
+            playSound('lose');
         } else {
-            icon = '🤜🤛'; title = 'تعادل!'; sub = `المجاميع متساوية (${pSum})`;
+            session.scoreA += 5;
+            session.scoreB += 5;
+            icon  = '🤜🤛';
+            title = 'تعادل!';
+            sub   = 'المجاميع متساوية (' + pSum + ')';
         }
     }
 
     updateScoreboard();
-    const isFinal = session.scoreA >= 151 || session.scoreB >= 151;
 
-    /* منح جواهر للفائز */
-    if (reason === 'win' || (reason === 'blocked' && session.hand.reduce((s,t)=>s+t[0]+t[1],0) < (session.aiHand.reduce((s,t)=>s+t[0]+t[1],0)))) {
-        if (typeof onRoundWin === 'function') onRoundWin(isFinal);
+    var isFinal = session.scoreA >= 151 || session.scoreB >= 151;
+
+    var pHandSum = session.hand.reduce(function(s, t) { return s + t[0] + t[1]; }, 0);
+    var aHandSum = session.aiHand.reduce(function(s, t) { return s + t[0] + t[1]; }, 0);
+    var playerWon = reason === 'win' ||
+        (reason === 'blocked' && pHandSum < aHandSum);
+
+    if (playerWon) {
+        if (typeof onRoundWin  === 'function') onRoundWin(isFinal);
+        if (typeof onGameWin   === 'function') onGameWin(isFinal);
     } else {
         if (typeof resetRoundBonuses === 'function') resetRoundBonuses();
     }
 
-    /* تصفير النقاط المضاعفة دائماً بعد نهاية الجولة */
-    if (typeof store !== 'undefined') {
-        store.activeDoublePoints = false;
-        const ind = document.getElementById('double-points-indicator');
-        if (ind) ind.remove();
-    }
-
-    /* تصفير تجميد الخصم */
-    if (typeof store !== 'undefined' && store.frozenTurns > 0 && reason !== 'win') {
-        store.frozenTurns = 0;
-    }
+    if (isFinal && typeof onGameComplete === 'function') onGameComplete();
 
     if (isFinal) {
-        if (session.scoreA >= 151)
-            showModal('🎉', 'فوز ساحق!', `أكملت ${session.roundNum} جولة وحققت ${session.scoreA} نقطة!`, true);
-        else
-            showModal('💀', 'الكمبيوتر فاز بالمباراة!', `وصل إلى ${session.scoreB} نقطة`, true);
+        if (session.scoreA >= 151) {
+            showModal('🎉', 'فوز ساحق!',
+                'أكملت ' + session.roundNum + ' جولة وحققت ' + session.scoreA + ' نقطة!', true);
+        } else {
+            showModal('💀', 'الكمبيوتر فاز بالمباراة!',
+                'وصل إلى ' + session.scoreB + ' نقطة', true);
+        }
     } else {
         session.roundNum++;
         showModal(icon, title, sub, false);
@@ -1056,54 +1307,65 @@ function endRound(reason) {
 }
 
 /* ============================================
-   نهاية الجولة — Multiplayer
+   نهاية الجولة — متعدد اللاعبين
    ============================================ */
 function endRoundNet(reason) {
     clearTurnTimer();
     document.getElementById('ai-thinking').classList.add('hidden');
 
-    let icon, title, sub;
-    const iAmHost = session.isHost;
+    var icon, title, sub;
 
     if (reason === 'win') {
-        /* أنا فزت — أحصل على مجموع يد الخصم (غير معروفة محلياً) */
-        /* نضيف 0 هنا والمضيف يحسب ويرسل النقاط الحقيقية */
-        icon = '🏆'; title = 'فزت بالجولة!';
-        sub  = 'أحسنت! أنهيت قطعك أولاً'; playSound('win');
-        if (iAmHost) session.scoreA += 0; else session.scoreB += 0;
+        if (session.isHost) session.scoreA += 25;
+        else                session.scoreB += 25;
+        icon  = '🏆';
+        title = 'فزت بالجولة!';
+        sub   = 'أحسنت!';
+        playSound('win');
+
     } else if (reason === 'lose') {
-        /* الخصم فاز — يحصل على مجموع يدي */
-        const mySum = session.hand.reduce((s,t) => s+t[0]+t[1], 0);
-        if (iAmHost) session.scoreB += mySum; else session.scoreA += mySum;
-        icon = '😔'; title = session.opponentName + ' فاز!';
-        sub  = `الخصم أخذ ${mySum} نقطة من يدك`; playSound('lose');
+        if (session.isHost) session.scoreB += 25;
+        else                session.scoreA += 25;
+        icon  = '😔';
+        title = session.opponentName + ' فاز!';
+        sub   = 'أنهى قطعه قبلك';
+        playSound('lose');
+
     } else {
-        /* blocked — الأقل يد يفوز */
-        const mySum  = session.hand.reduce((s,t) => s+t[0]+t[1], 0);
-        icon = '🤝'; title = 'جولة موقوفة';
-        sub  = `يدك: ${mySum} نقطة`;
-        /* المضيف يحسب ويرسل النتيجة النهائية */
+        icon  = '🤝';
+        title = 'جولة موقوفة';
+        sub   = 'لا أحد يستطيع اللعب';
+        session.scoreA += 5;
+        session.scoreB += 5;
     }
 
     updateScoreboard();
-    const isFinal = session.scoreA >= 151 || session.scoreB >= 151;
 
-    /* المضيف يرسل نتيجة الجولة للضيف */
-    if (iAmHost) {
+    var isFinal = session.scoreA >= 151 || session.scoreB >= 151;
+
+    if (session.isHost) {
         sendMsg({
-            type: 'round-end',
-            icon, title, sub, isFinal,
+            type:       'round-end',
+            icon:       icon,
+            title:      title,
+            sub:        sub,
+            isFinal:    isFinal,
             scoreHost:  session.scoreA,
             scoreGuest: session.scoreB
         });
     }
 
     if (isFinal) {
-        const iWon = (iAmHost && session.scoreA >= 151) || (!iAmHost && session.scoreB >= 151);
-        showModal(iWon ? '🎉' : '💀',
+        var iWon =
+            (session.isHost  && session.scoreA >= 151) ||
+            (!session.isHost && session.scoreB >= 151);
+
+        showModal(
+            iWon ? '🎉' : '💀',
             iWon ? 'فوز ساحق!' : session.opponentName + ' فاز بالمباراة!',
-            `النتيجة النهائية: ${session.scoreA} — ${session.scoreB}`,
-            true);
+            'النتيجة النهائية: ' + session.scoreA + ' — ' + session.scoreB,
+            true
+        );
     } else {
         session.roundNum++;
         showModal(icon, title, sub, false);
@@ -1114,19 +1376,24 @@ function endRoundNet(reason) {
    المودال
    ============================================ */
 function showModal(icon, title, sub, isFinal) {
-    document.getElementById('modal-icon').textContent  = icon;
-    document.getElementById('modal-title').textContent = title;
-    document.getElementById('modal-sub').textContent   = sub;
+    document.getElementById('modal-icon').textContent    = icon;
+    document.getElementById('modal-title').textContent   = title;
+    document.getElementById('modal-sub').textContent     = sub;
     document.getElementById('modal-score-a').textContent = session.scoreA;
     document.getElementById('modal-score-b').textContent = session.scoreB;
 
-    const btn = document.getElementById('modal-action-btn');
+    var btn = document.getElementById('modal-action-btn');
+
     if (isFinal) {
         btn.textContent = '🔄 لعبة جديدة';
-        btn.onclick = () => { if(conn) conn.close(); if(peer) peer.destroy(); location.reload(); };
+        btn.onclick = function() {
+            if (conn) conn.close();
+            if (peer) peer.destroy();
+            location.reload();
+        };
     } else {
         btn.textContent = '▶️ الجولة القادمة';
-        btn.onclick = closeModalAndContinue;
+        btn.onclick     = closeModalAndContinue;
     }
 
     document.getElementById('round-modal').classList.remove('hidden');
@@ -1134,56 +1401,12 @@ function showModal(icon, title, sub, isFinal) {
 
 function closeModalAndContinue() {
     document.getElementById('round-modal').classList.add('hidden');
-    if (session.isSolo) {
-        startNewRound();
-    } else if (session.isHost) {
-        /* المضيف يبدأ الجولة الجديدة ويرسلها */
+
+    if (session.isSolo || session.isHost) {
         startNewRound();
     } else {
-        /* الضيف ينتظر المضيف */
         showToast('⏳ انتظر المضيف ليبدأ الجولة...');
     }
-}
-
-/* ============================================
-   إنشاء عنصر قطعة الدومينو
-   ============================================ */
-function createTileUI(n1, n2, onBoard, isDouble) {
-    const div = document.createElement('div');
-    div.className = 'domino-tile';
-    const root = document.documentElement;
-    const bg  = root.style.getPropertyValue('--tile-bg')     || '#fdfaf1';
-    const bdr = root.style.getPropertyValue('--tile-border') || '#ccc';
-    if (bg  && bg  !== '#fdfaf1') div.style.background  = bg;
-    if (bdr && bdr !== '#ccc')   div.style.borderColor  = bdr;
-    if (onBoard) {
-        div.classList.add('on-board');
-        if (isDouble) {
-            div.classList.add('double');
-            div.innerHTML = `<div class="tile-half">${getDots(n1)}</div>
-                <div class="divider"></div>
-                <div class="tile-half">${getDots(n2)}</div>`;
-        } else {
-            div.classList.add('horizontal');
-            div.innerHTML = `<div class="tile-half">${getDots(n1)}</div>
-                <div class="divider" style="width:1.5px;height:75%;align-self:center;margin:0;flex-shrink:0;"></div>
-                <div class="tile-half">${getDots(n2)}</div>`;
-        }
-    } else {
-        div.innerHTML = `<div class="tile-half">${getDots(n1)}</div>
-            <div class="divider"></div>
-            <div class="tile-half">${getDots(n2)}</div>`;
-    }
-    return div;
-}
-
-function getDots(n) {
-    const patterns = {
-        0: [], 1: ['p1'], 2: ['ptr','pbl'], 3: ['ptr','p1','pbl'],
-        4: ['ptl','ptr','pbl','pbr'], 5: ['ptl','ptr','p1','pbl','pbr'],
-        6: ['ptl','ptr','pml','pmr','pbl','pbr']
-    };
-    return (patterns[n] || []).map(p => `<div class="dot ${p}"></div>`).join('');
 }
 
 /* ============================================
@@ -1194,33 +1417,43 @@ function updateScoreboard() {
     document.getElementById('s-b').innerText = session.scoreB;
     updateMenuStats();
 }
+
 function updateMenuStats() {
     document.getElementById('menu-round').textContent   = session.roundNum;
     document.getElementById('menu-score-a').textContent = session.scoreA;
     document.getElementById('menu-score-b').textContent = session.scoreB;
 }
+
 function updateTurnIndicator(msg) {
-    const el = document.getElementById('turn-indicator');
+    var el = document.getElementById('turn-indicator');
     if (el) el.textContent = msg;
 }
+
 function updateBoneyardCounter() {
-    const el = document.getElementById('boneyard-counter');
-    if (el) el.textContent = `🂠 ${session.boneyard.length}`;
+    var el = document.getElementById('boneyard-counter');
+    if (el) el.textContent = '🂠 ' + session.boneyard.length;
 }
 
 /* ============================================
    Toast
    ============================================ */
-let toastTimer = null;
+var toastTimer = null;
+
 function showToast(msg) {
-    const el = document.getElementById('toast');
+    var el = document.getElementById('toast');
     if (!el) return;
+
     el.textContent = msg;
     el.classList.add('show');
+
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+    toastTimer = setTimeout(function() {
+        el.classList.remove('show');
+    }, 2400);
 }
 
-/* ===== تهيئة ===== */
+/* ============================================
+   تهيئة
+   ============================================ */
 selectMode('solo');
 selectDiff('medium');
