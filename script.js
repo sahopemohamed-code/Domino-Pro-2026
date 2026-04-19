@@ -45,17 +45,16 @@ function initPeer(asHost) {
         debug: 0,
         config: {
             iceServers: [
+                { urls: 'stun:stun.relay.metered.ca:80' },
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' },
-                { urls: 'stun:stun3.l.google.com:19302' },
-                { urls: 'stun:stun4.l.google.com:19302' },
-                { urls: 'turn:openrelay.metered.ca:80',
-                  username: 'openrelayproject', credential: 'openrelayproject' },
-                { urls: 'turn:openrelay.metered.ca:443',
-                  username: 'openrelayproject', credential: 'openrelayproject' },
-                { urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                  username: 'openrelayproject', credential: 'openrelayproject' }
+                { urls: 'turn:global.relay.metered.ca:80',
+                  username: '2c74e51c3a540fd91f706852', credential: '2fEsYxtaPc7qRsZB' },
+                { urls: 'turn:global.relay.metered.ca:80?transport=tcp',
+                  username: '2c74e51c3a540fd91f706852', credential: '2fEsYxtaPc7qRsZB' },
+                { urls: 'turn:global.relay.metered.ca:443',
+                  username: '2c74e51c3a540fd91f706852', credential: '2fEsYxtaPc7qRsZB' },
+                { urls: 'turns:global.relay.metered.ca:443?transport=tcp',
+                  username: '2c74e51c3a540fd91f706852', credential: '2fEsYxtaPc7qRsZB' }
             ]
         }
     });
@@ -175,9 +174,7 @@ function handleNetMessage(data) {
             showModal(data.icon, data.title, data.sub, data.isFinal);
             break;
 
-        /* ===== إصلاح النقاط في وضع المتعدد ===== */
         case 'loser-sum':
-            /* الخاسر أرسل مجموع يده — أنا الفائز أضيفها */
             if (session.isHost) session.scoreA += data.sum;
             else session.scoreB += data.sum;
             updateScoreboard();
@@ -194,7 +191,6 @@ function handleNetMessage(data) {
             break;
 
         case 'i-won':
-            /* الضيف فاز — أنا المضيف الخاسر أرسل مجموع يدي */
             {
                 const ms  = session.hand.reduce((s,t) => s+t[0]+t[1], 0);
                 session.scoreB += ms;
@@ -207,7 +203,6 @@ function handleNetMessage(data) {
             break;
 
         case 'blocked-sum':
-            /* عند التوقف — المضيف يقرر النتيجة */
             if (session.isHost) {
                 const myS  = session.hand.reduce((s,t) => s+t[0]+t[1], 0);
                 const oppS = data.sum;
@@ -437,12 +432,14 @@ function tryConnectAsHost() {
         debug: 0,
         config: {
             iceServers: [
+                { urls: 'stun:stun.relay.metered.ca:80' },
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'turn:openrelay.metered.ca:80',
-                  username: 'openrelayproject', credential: 'openrelayproject' },
-                { urls: 'turn:openrelay.metered.ca:443',
-                  username: 'openrelayproject', credential: 'openrelayproject' }
+                { urls: 'turn:global.relay.metered.ca:80',
+                  username: '2c74e51c3a540fd91f706852', credential: '2fEsYxtaPc7qRsZB' },
+                { urls: 'turn:global.relay.metered.ca:443',
+                  username: '2c74e51c3a540fd91f706852', credential: '2fEsYxtaPc7qRsZB' },
+                { urls: 'turns:global.relay.metered.ca:443?transport=tcp',
+                  username: '2c74e51c3a540fd91f706852', credential: '2fEsYxtaPc7qRsZB' }
             ]
         }
     });
@@ -607,7 +604,6 @@ function renderHand() {
     const dock = document.getElementById('hand-dock');
     dock.innerHTML = '';
 
-    /* كشف إذا كان الجهاز يدعم اللمس */
     const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 
     session.hand.forEach((tile, idx) => {
@@ -616,7 +612,6 @@ function renderHand() {
         if (canPlay) el.classList.add('playable');
 
         if (isTouch) {
-            /* جهاز لمسي — touchend فقط، نمنع onclick كلياً */
             let touchMoved     = false;
             let touchStartTime = 0;
             let touchHandled   = false;
@@ -632,7 +627,7 @@ function renderHand() {
             }, { passive: true });
 
             el.addEventListener('touchend', function(e) {
-                if (touchMoved)  return;
+                if (touchMoved)   return;
                 if (touchHandled) return;
                 if (Date.now() - touchStartTime > 600) return;
                 touchHandled = true;
@@ -642,14 +637,12 @@ function renderHand() {
                 tryToPlay(idx);
             }, { passive: false });
 
-            /* منع onclick من الإطلاق نهائياً على الجهاز اللمسي */
             el.addEventListener('click', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
             });
 
         } else {
-            /* متصفح عادي — onclick فقط */
             el.addEventListener('click', function(e) {
                 if (!session.isPlayerTurn) { showToast('⏳ انتظر دورك'); return; }
                 tryToPlay(idx);
@@ -715,7 +708,6 @@ function tryToPlay(idx) {
     const fitsLeft  = fitLeftV1 || fitLeftV2;
 
     if (fitsRight && fitsLeft && session.leftEnd !== session.rightEnd) {
-        /* تناسب الجهتين فعلاً — اسأل اللاعب */
         showSideChoiceModal(idx, tile);
     } else if (fitsRight) {
         if (fitRightV1) executeMove(idx, 'right', tile[0], tile[1], 'player');
@@ -731,21 +723,20 @@ function tryToPlay(idx) {
 }
 
 /* ============================================
-   مودال اختيار الجهة — يستخدم HTML ثابت بدل ديناميكي
+   مودال اختيار الجهة — HTML ثابت + style.display
    ============================================ */
-
-/* متغيرات المودال */
 let _sideIdx  = null;
 let _sideTile = null;
 
 function showSideChoiceModal(idx, tile) {
     _sideIdx  = idx;
     _sideTile = tile;
-    document.getElementById('side-choice-modal').classList.remove('hidden');
+    /* استخدام style.display مباشرة لتجنب تعارض .hidden مع display:flex */
+    document.getElementById('side-choice-modal').style.display = 'flex';
 }
 
 function choiceSide(side) {
-    document.getElementById('side-choice-modal').classList.add('hidden');
+    document.getElementById('side-choice-modal').style.display = 'none';
 
     if (side === 'cancel' || _sideIdx === null) return;
 
@@ -1063,9 +1054,7 @@ function endRoundNet(reason) {
         icon = '🏆'; title = 'فزت بالجولة!';
         sub  = 'أحسنت! أنهيت قطعك أولاً';
         playSound('win');
-        /* الفائز ينتظر رسالة loser-sum من الخاسر لإضافة النقاط */
         if (!iAmHost) sendMsg({ type: 'i-won' });
-        /* إذا كان المضيف هو الفائز سينتظر loser-sum من الضيف */
 
     } else if (reason === 'lose') {
         const mySum = session.hand.reduce((s,t) => s+t[0]+t[1], 0);
@@ -1074,7 +1063,6 @@ function endRoundNet(reason) {
         icon = '😔'; title = session.opponentName + ' فاز!';
         sub  = `الخصم أخذ ${mySum} نقطة من يدك`;
         playSound('lose');
-        /* الخاسر يرسل مجموعه للفائز */
         sendMsg({ type: 'loser-sum', sum: mySum });
 
     } else {
