@@ -175,12 +175,13 @@ function handleNetMessage(data) {
             break;
 
         case 'loser-sum':
-            if (session.isHost) session.scoreA += data.sum;
-            else session.scoreB += data.sum;
+            /* أنا الفائز — الخاسر أرسل مجموع يده */
+            /* النقاط أُضيفت مسبقاً في endRoundNet — هنا فقط نُحدّث الواجهة */
             updateScoreboard();
             {
                 const isFN = session.scoreA >= 151 || session.scoreB >= 151;
                 const ws   = `حصلت على ${data.sum} نقطة من يد الخصم`;
+                /* المضيف الفائز يُرسل النتيجة للضيف */
                 if (session.isHost) {
                     sendMsg({ type: 'round-end', icon: '🏆', title: 'فزت بالجولة!',
                         sub: ws, isFinal: isFN,
@@ -191,9 +192,12 @@ function handleNetMessage(data) {
             break;
 
         case 'i-won':
+            /* الخصم فاز — أنا الخاسر أحسب يدي وأرسلها */
             {
-                const ms  = session.hand.reduce((s,t) => s+t[0]+t[1], 0);
-                session.scoreB += ms;
+                const ms = session.hand.reduce((s,t) => s+t[0]+t[1], 0);
+                /* أضف النقاط للفائز (الخصم) */
+                if (session.isHost) session.scoreB += ms;
+                else                session.scoreA += ms;
                 updateScoreboard();
                 const isFN = session.scoreA >= 151 || session.scoreB >= 151;
                 sendMsg({ type: 'loser-sum', sum: ms });
@@ -731,7 +735,6 @@ let _sideTile = null;
 function showSideChoiceModal(idx, tile) {
     _sideIdx  = idx;
     _sideTile = tile;
-    /* استخدام style.display مباشرة لتجنب تعارض .hidden مع display:flex */
     document.getElementById('side-choice-modal').style.display = 'flex';
 }
 
@@ -1054,18 +1057,30 @@ function endRoundNet(reason) {
         icon = '🏆'; title = 'فزت بالجولة!';
         sub  = 'أحسنت! أنهيت قطعك أولاً';
         playSound('win');
-        if (!iAmHost) sendMsg({ type: 'i-won' });
+        /* كلا الطرفين يرسل i-won للخصم الخاسر */
+        sendMsg({ type: 'i-won' });
 
     } else if (reason === 'lose') {
         const mySum = session.hand.reduce((s,t) => s+t[0]+t[1], 0);
+        /* أضف النقاط للفائز */
         if (iAmHost) session.scoreB += mySum;
         else         session.scoreA += mySum;
         icon = '😔'; title = session.opponentName + ' فاز!';
         sub  = `الخصم أخذ ${mySum} نقطة من يدك`;
         playSound('lose');
+        /* الخاسر يرسل مجموعه للفائز ليظهر له المودال */
         sendMsg({ type: 'loser-sum', sum: mySum });
+        /* المضيف الخاسر يرسل round-end للضيف الفائز */
+        if (iAmHost) {
+            updateScoreboard();
+            const isFN2 = session.scoreA >= 151 || session.scoreB >= 151;
+            sendMsg({ type: 'round-end', icon: '😔', title: session.opponentName + ' فاز!',
+                sub, isFinal: isFN2,
+                scoreHost: session.scoreA, scoreGuest: session.scoreB });
+        }
 
     } else {
+        /* blocked — كلاهما يرسل مجموعه — المضيف يقرر */
         const mySum = session.hand.reduce((s,t) => s+t[0]+t[1], 0);
         icon = '🤝'; title = 'جولة موقوفة';
         sub  = `يدك: ${mySum} نقطة`;
@@ -1074,11 +1089,6 @@ function endRoundNet(reason) {
 
     updateScoreboard();
     const isFinal = session.scoreA >= 151 || session.scoreB >= 151;
-
-    if (iAmHost && reason === 'lose') {
-        sendMsg({ type: 'round-end', icon, title, sub, isFinal,
-            scoreHost: session.scoreA, scoreGuest: session.scoreB });
-    }
 
     if (isFinal) {
         const iWon = (iAmHost && session.scoreA >= 151) || (!iAmHost && session.scoreB >= 151);
