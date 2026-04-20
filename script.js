@@ -175,13 +175,13 @@ function handleNetMessage(data) {
             break;
 
         case 'loser-sum':
-            /* أنا الفائز — الخاسر أرسل مجموع يده */
-            /* النقاط أُضيفت مسبقاً في endRoundNet — هنا فقط نُحدّث الواجهة */
+            /* أنا الفائز — أضيف نقاط الخاسر لنفسي هنا فقط */
+            if (session.isHost) session.scoreA += data.sum;
+            else                session.scoreB += data.sum;
             updateScoreboard();
             {
                 const isFN = session.scoreA >= 151 || session.scoreB >= 151;
                 const ws   = `حصلت على ${data.sum} نقطة من يد الخصم`;
-                /* المضيف الفائز يُرسل النتيجة للضيف */
                 if (session.isHost) {
                     sendMsg({ type: 'round-end', icon: '🏆', title: 'فزت بالجولة!',
                         sub: ws, isFinal: isFN,
@@ -192,17 +192,11 @@ function handleNetMessage(data) {
             break;
 
         case 'i-won':
-            /* الخصم فاز — أنا الخاسر أحسب يدي وأرسلها */
+            /* الخصم فاز — أنا الخاسر أحسب يدي وأرسلها فقط — النقاط تُضاف عند الفائز */
             {
                 const ms = session.hand.reduce((s,t) => s+t[0]+t[1], 0);
-                /* أضف النقاط للفائز (الخصم) */
-                if (session.isHost) session.scoreB += ms;
-                else                session.scoreA += ms;
-                updateScoreboard();
-                const isFN = session.scoreA >= 151 || session.scoreB >= 151;
                 sendMsg({ type: 'loser-sum', sum: ms });
-                showModal('😔', session.opponentName + ' فاز!',
-                    `الخصم أخذ ${ms} نقطة من يدك`, isFN);
+                /* المودال سيظهر عند استقبال round-end من المضيف */
             }
             break;
 
@@ -1062,22 +1056,11 @@ function endRoundNet(reason) {
 
     } else if (reason === 'lose') {
         const mySum = session.hand.reduce((s,t) => s+t[0]+t[1], 0);
-        /* أضف النقاط للفائز */
-        if (iAmHost) session.scoreB += mySum;
-        else         session.scoreA += mySum;
+        /* الخاسر يرسل مجموعه فقط — الفائز يضيف النقاط عند استقبال loser-sum */
         icon = '😔'; title = session.opponentName + ' فاز!';
         sub  = `الخصم أخذ ${mySum} نقطة من يدك`;
         playSound('lose');
-        /* الخاسر يرسل مجموعه للفائز ليظهر له المودال */
         sendMsg({ type: 'loser-sum', sum: mySum });
-        /* المضيف الخاسر يرسل round-end للضيف الفائز */
-        if (iAmHost) {
-            updateScoreboard();
-            const isFN2 = session.scoreA >= 151 || session.scoreB >= 151;
-            sendMsg({ type: 'round-end', icon: '😔', title: session.opponentName + ' فاز!',
-                sub, isFinal: isFN2,
-                scoreHost: session.scoreA, scoreGuest: session.scoreB });
-        }
 
     } else {
         /* blocked — كلاهما يرسل مجموعه — المضيف يقرر */
